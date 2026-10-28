@@ -1,7 +1,7 @@
 {
   "name": "dsh-rea-manager",
   "version": "0.1.0",
-  "description": "REA (Reverse Engineer Anything) for DeepSeek Harness: multi-mirror install, full version catalog, update & rollback, MCP tool bridge.",
+  "description": "REA（Reverse Engineer Anything）管理器：多镜像链安装、完整版本目录、更新与回退、代理站点管理界面，以及 MCP 工具桥。",
   "license": "MIT",
   "repository": {
     "type": "git",
