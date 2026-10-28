@@ -163,6 +163,17 @@ window.__ModuleLoader__.load({
         borderRadius: "8px",
       },
       mono: { fontFamily: "ui-monospace, monospace", fontSize: "11px", opacity: 0.8 },
+      // Service control strip: pinned between the tab row and the tab body.
+      bar: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        flexWrap: "wrap",
+        padding: "6px 8px",
+        borderRadius: "8px",
+        border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
+        background: "var(--dsw-alias-bg-layer-2, rgba(128,128,128,.06))",
+      },
     };
 
     /* ------------------------------------------------------------ versions */
@@ -472,11 +483,53 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /* ------------------------------------------------------------- mcp bar */
+
+    // Standalone service control. It sits between the tab row and the tab body
+    // so start / stop / restart is reachable from every tab, not buried inside
+    // the tool list.
+    function McpBar({ ctx, busy, setBusy, setError, setMessage, status, onStatus }) {
+      const running = status?.running === true;
+      const disabled = busy !== "";
+
+      const act = async (action) => {
+        const label = action === "start" ? "启动" : action === "stop" ? "停止" : "重启";
+        setBusy(`mcp-${action}`);
+        setError("");
+        setMessage("");
+        try {
+          const endpoint = action === "start" ? "mcpStart" : action === "stop" ? "mcpStop" : "mcpRestart";
+          const next = await callRpc(ctx, endpoint, {}, 300000);
+          onStatus?.(next);
+          setMessage(`${label}完成：${next.running ? `运行中，${next.tools} 个工具` : "已停止"}`);
+        } catch (cause) {
+          setError(String(cause?.message ?? cause));
+        } finally {
+          setBusy("");
+        }
+      };
+
+      return h("div", { style: styles.bar },
+        h("span", { style: styles.title }, "REA 服务"),
+        h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } },
+          running ? `运行中 · ${status.tools} 工具` : "已停止"),
+        h("button", { type: "button", style: styles.buttonPrimary, disabled: disabled || running, onClick: () => act("start") },
+          busy === "mcp-start" ? "启动中…" : "启动"),
+        h("button", { type: "button", style: styles.button, disabled: disabled || !running, onClick: () => act("restart") },
+          busy === "mcp-restart" ? "重启中…" : "重启"),
+        h("button", { type: "button", style: styles.buttonDanger, disabled: disabled || !running, onClick: () => act("stop") },
+          busy === "mcp-stop" ? "停止中…" : "停止"),
+        status
+          ? h("span", { style: styles.hint },
+            `${status.enabled ? "允许启动" : "已显式停止"} · 超时 ${status.startupTimeoutMs}/${status.toolTimeoutMs}ms · 自动重连 ${status.autoReconnect ? "开" : "关"}`)
+          : h("span", { style: styles.hint }, "读取服务状态…"),
+      );
+    }
+
     /* ------------------------------------------------------------ mcp tools */
 
-    function ToolPanel({ ctx, setBusy, setError, setMessage, busy }) {
+    function ToolPanel({ ctx, setBusy, setError, setMessage, busy, mcp }) {
       const [state, setState] = React.useState({ loading: true, tools: [], total: 0, enabled: 0, disabled: 0, groups: [] });
-      const [mcp, setMcp] = React.useState(null);
       const [query, setQuery] = React.useState("");
       const [group, setGroup] = React.useState("");
       const [onlyDisabled, setOnlyDisabled] = React.useState(false);
@@ -499,17 +552,12 @@ window.__ModuleLoader__.load({
         setBusy("toolLoad");
         setError("");
         try {
-          const [status, list] = await Promise.all([
-            callRpc(ctx, "mcpStatus", {}, 60000),
-            callRpc(ctx, "toolList", {
-              query: query.trim() || undefined,
-              group: group || undefined,
-              enabled: onlyDisabled ? false : undefined,
-              limit: 400,
-            }, 120000),
-          ]);
-          setMcp(status);
-          applyList(list);
+          applyList(await callRpc(ctx, "toolList", {
+            query: query.trim() || undefined,
+            group: group || undefined,
+            enabled: onlyDisabled ? false : undefined,
+            limit: 400,
+          }, 120000));
         } catch (cause) {
           setError(String(cause?.message ?? cause));
           setState((previous) => ({ ...previous, loading: false }));
@@ -537,12 +585,6 @@ window.__ModuleLoader__.load({
           setBusy("");
         }
       }, [load, setBusy, setError, setMessage]);
-
-      const mcpAction = (action) => run(`mcp-${action}`, async () => {
-        const status = await callRpc(ctx, action === "start" ? "mcpStart" : action === "stop" ? "mcpStop" : "mcpRestart", {}, 300000);
-        setMcp(status);
-        return `${action === "start" ? "已启动" : action === "stop" ? "已停止" : "已重启"}：${status.running ? `运行中，${status.tools} 个工具` : "已停止"}`;
-      });
 
       const toggle = (tool) => run(`tool-${tool.name}`, async () => {
         await callRpc(ctx, "toolSet", { tool: tool.name, enabled: !tool.enabled }, 120000);
@@ -577,17 +619,8 @@ window.__ModuleLoader__.load({
       };
 
       const disabled = busy !== "";
-      const running = mcp?.running === true;
 
       return h("div", { style: styles.root },
-        h("div", { style: styles.row },
-          h("span", { style: styles.hint }, "MCP 服务"),
-          h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } }, running ? `运行中 · ${mcp.tools} 工具` : "已停止"),
-          h("button", { type: "button", style: styles.buttonPrimary, disabled, onClick: () => mcpAction("start") }, busy === "mcp-start" ? "启动中…" : "启动"),
-          h("button", { type: "button", style: styles.button, disabled, onClick: () => mcpAction("restart") }, busy === "mcp-restart" ? "重启中…" : "重启"),
-          h("button", { type: "button", style: styles.buttonDanger, disabled, onClick: () => mcpAction("stop") }, busy === "mcp-stop" ? "停止中…" : "停止"),
-          mcp ? h("span", { style: styles.hint }, `超时 ${mcp.startupTimeoutMs}/${mcp.toolTimeoutMs}ms · 自动重连 ${mcp.autoReconnect ? "开" : "关"}`) : null,
-        ),
         h("div", { style: styles.row },
           h("input", {
             style: { ...styles.input, width: "200px" },
@@ -651,10 +684,26 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState("");
       const [message, setMessage] = React.useState("");
       const [error, setError] = React.useState("");
+      const [mcp, setMcp] = React.useState(null);
+
+      React.useEffect(() => {
+        let alive = true;
+        (async () => {
+          try {
+            const status = await callRpc(ctx, "mcpStatus", {}, 60000);
+            if (alive) setMcp(status);
+          } catch {
+            /* the bar shows "读取服务状态…" until the host answers */
+          }
+        })();
+        return () => {
+          alive = false;
+        };
+      }, [ctx]);
 
       const tabs = [
         ["versions", "版本管理"],
-        ["tools", "MCP 工具"],
+        ["tools", "REA 工具"],
         ["mirrors", "代理站点"],
       ];
 
@@ -669,10 +718,11 @@ window.__ModuleLoader__.load({
           }, label)),
           busy ? h("span", { style: styles.hint }, "处理中…") : null,
         ),
+        h(McpBar, { ctx, busy, setBusy, setError, setMessage, status: mcp, onStatus: setMcp }),
         tab === "versions"
           ? h(VersionPanel, { ctx, busy, setBusy, setError, setMessage })
           : tab === "tools"
-            ? h(ToolPanel, { ctx, busy, setBusy, setError, setMessage })
+            ? h(ToolPanel, { ctx, busy, setBusy, setError, setMessage, mcp })
             : h(MirrorPanel, { ctx, busy, setBusy, setError, setMessage }),
         error ? h("div", { style: styles.error }, error) : null,
         message ? h("div", { style: styles.log }, message) : null,
