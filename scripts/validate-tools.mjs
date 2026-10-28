@@ -19,7 +19,7 @@ const ctx = {
   effect() {},
 };
 
-const mod = await import('file:///G:/laboratory/dsh-rea/index.js');
+const mod = await import('file:///G:/laboratory/dsh-rea-manager/index.js');
 const dispose = mod.apply(ctx);
 await new Promise((resolve) => setTimeout(resolve, 200));
 console.log(`registered ${registered.length} tools: ${registered.map((t) => t.name).join(', ')}`);

@@ -1,36 +1,37 @@
-# dsh-rea
+# dsh-rea-manager
 
 **REA（Reverse Engineer Anything）的 DeepSeek Harness 插件**：一条命令装好 REA 的 MCP 服务，支持从仓库更新到最新版、查看全部历史版本并回退到任意指定版本；所有网络访问都走多镜像链，国内直连 GitHub 不通时自动兜底。
 
 ## 它做什么
 
-- **装 REA**：把 [morluto/rea](https://github.com/morluto/rea) 以 `rea-agents` npm 包（自带预编译 `dist/`）或 git 源码构建两种通道装进 `~/.dsh/dsh-rea/versions/<版本>/`，互不污染 profile 的依赖树。
+- **装 REA**：把 [morluto/rea](https://github.com/morluto/rea) 以 `rea-agents` npm 包（自带预编译 `dist/`）或 git 源码构建两种通道装进 `~/.dsh/dsh-rea-manager/versions/<版本>/`，互不污染 profile 的依赖树。
 - **更新**：`rea_update` 拉最新发布版，旧版本保留在磁盘上。
 - **回退**：`rea_versions` 给出**全部**版本记录列表（git tag ∪ npm 版本，含日期与来源），`rea_rollback {"version":"6.5.0"}` 一键切回；GUI 设置页同样可选。
 - **调工具**：REA 有 229 个分析工具（原生二进制、APK/Android、Electron/JS、Firmware、Frida、ADB、Ghidra/IDA/Hopper、证据比对……）。插件不把它们全塞进模型工具表（那会吃掉 300 KB~3.5 MB 的 schema 预算），而是暴露 3 个入口：`rea_tools` 检索、`rea_tool_schema` 取参数、`rea_call` 执行。
 - **多镜像兜底**：git（GitHub 直连 + Gitee 镜像 + 40 个 GitHub 加速站）、npm（npmmirror / cnpmjs / 腾讯 / 官方 / USTC / yarnpkg）、Node 二进制（npmmirror CDN / nodejs.org）。任一环节失败自动换下一个，`rea_mirrors` 可实测延迟并落盘健康度。
+- **代理站点管理**：设置页「代理站点」标签可测试单个/全部站点、移除、添加自定义代理（支持 `{url}` 占位符）、按延迟重排、一键**重置为默认站点**；每次改动立即写入 `config.json` 持久化。模型侧对应 `rea_mirror_admin`。
 
 ## 安装
 
 ```bash
 # 在 DSH profile 里
 cd ~/.dsh/profiles/desktop
-# package.json: "dsh-rea": "link:G:/laboratory/dsh-rea"（或 git+https://github.com/User-Clb/dsh-rea.git）
-#              dsh.profile.bundles 追加 "dsh-rea"
+# package.json: "dsh-rea-manager": "link:G:/laboratory/dsh-rea-manager"（或 git+https://github.com/User-Clb/dsh-rea-manager.git）
+#              dsh.profile.bundles 追加 "dsh-rea-manager"
 # 然后重启 DSH
 ```
 
 装好后模型可用这些工具，也可以直接用 CLI：
 
 ```bash
-node scripts/dsh-rea-cli.mjs status
-node scripts/dsh-rea-cli.mjs versions --refresh
-node scripts/dsh-rea-cli.mjs install 6.8.0
-node scripts/dsh-rea-cli.mjs update
-node scripts/dsh-rea-cli.mjs rollback 6.5.0
-node scripts/dsh-rea-cli.mjs mirrors
-node scripts/dsh-rea-cli.mjs tools --query apk
-node scripts/dsh-rea-cli.mjs call inspect_android_package '{"apk_path":"C:/x/app.apk"}'
+node scripts/dsh-rea-manager-cli.mjs status
+node scripts/dsh-rea-manager-cli.mjs versions --refresh
+node scripts/dsh-rea-manager-cli.mjs install 6.8.0
+node scripts/dsh-rea-manager-cli.mjs update
+node scripts/dsh-rea-manager-cli.mjs rollback 6.5.0
+node scripts/dsh-rea-manager-cli.mjs mirrors
+node scripts/dsh-rea-manager-cli.mjs tools --query apk
+node scripts/dsh-rea-manager-cli.mjs call inspect_android_package '{"apk_path":"C:/x/app.apk"}'
 ```
 
 ## 工具
@@ -51,7 +52,7 @@ node scripts/dsh-rea-cli.mjs call inspect_android_package '{"apk_path":"C:/x/app
 
 ## 配置
 
-配置文件：`~/.dsh/dsh-rea/config.json`
+配置文件：`~/.dsh/dsh-rea-manager/config.json`
 
 ```jsonc
 {
@@ -77,7 +78,7 @@ node scripts/dsh-rea-cli.mjs call inspect_android_package '{"apk_path":"C:/x/app
 ## 目录结构
 
 ```
-~/.dsh/dsh-rea/
+~/.dsh/dsh-rea-manager/
   config.json        配置
   active.json        当前启用的版本指针（回退=改这个文件）
   catalog.json       版本目录缓存（10 分钟）
@@ -85,7 +86,7 @@ node scripts/dsh-rea-cli.mjs call inspect_android_package '{"apk_path":"C:/x/app
   versions/<v>/      每个版本一份独立安装
   git/               部分克隆（--filter=blob:none），用于列 tag 与源码构建
   node/<v>/          自动下载的 Node 运行时
-  logs/dsh-rea.log   安装/探测日志
+  logs/dsh-rea-manager.log   安装/探测日志
 ```
 
 ## 说明

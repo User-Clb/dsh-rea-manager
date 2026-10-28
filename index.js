@@ -1,5 +1,5 @@
 /**
- * dsh-rea — REA (Reverse Engineer Anything) for DeepSeek Harness.
+ * dsh-rea-manager — REA (Reverse Engineer Anything) for DeepSeek Harness.
  *
  * Host half. Registers:
  *   - the REA tool surface (`rea_status`, `rea_versions`, `rea_install`,
@@ -8,7 +8,7 @@
  *   - one system-prompt section describing the workflow;
  *   - a plugin RPC route so a client half can drive the same operations.
  *
- * The plugin owns its own installation store (`<DSH_HOME>/dsh-rea`), so REA
+ * The plugin owns its own installation store (`<DSH_HOME>/dsh-rea-manager`), so REA
  * updates and rollbacks never touch the harness profile's dependency tree.
  */
 import { registerTools, requireRuntime } from './lib/tools.js';
@@ -18,15 +18,25 @@ import { installVersion, activateRuntime, listInstalled, inspectRuntime } from '
 import { ensureNodeRuntime } from './lib/node-runtime.js';
 import { closeSession, getSession, sessionState } from './lib/mcp-client.js';
 import { probeMirrors } from './lib/health.js';
+import {
+  createMirror,
+  deleteMirror,
+  editMirror,
+  listMirrors,
+  reorderMirrors,
+  restoreMirrors,
+  testAllMirrors,
+  testMirror,
+} from './lib/mirror-admin.js';
 import { storeRoot } from './lib/paths.js';
 
-export const name = 'dsh-rea';
+export const name = 'dsh-rea-manager';
 export const inject = ['tools', 'systemPrompt'];
 
-const RPC_PATH = '/api/plugin-rpc/dsh-rea';
-const RPC_METHOD = 'plugin-rpc/dsh-rea';
+const RPC_PATH = '/api/plugin-rpc/dsh-rea-manager';
+const RPC_METHOD = 'plugin-rpc/dsh-rea-manager';
 
-const PROMPT_SECTION = `REA (Reverse Engineer Anything) is available through dsh-rea. Workflow:
+const PROMPT_SECTION = `REA (Reverse Engineer Anything) is available through dsh-rea-manager. Workflow:
 - rea_status — active version, installed versions, Node runtime, MCP session.
 - rea_versions — the complete release list (git tags + npm), newest first.
 - rea_install {"version":"6.8.0"} — install + activate one version; "latest" or a unique prefix works.
@@ -41,7 +51,7 @@ export function apply(ctx) {
   const disposeTools = registerTools(ctx);
 
   ctx.systemPrompt?.section?.({
-    name: 'plugin:dsh-rea',
+    name: 'plugin:dsh-rea-manager',
     order: 300,
     text: PROMPT_SECTION,
   });
@@ -60,12 +70,12 @@ export function apply(ctx) {
         requestBody: 'buffered',
         fetch: (request) => handleRpc(request, ctx),
       });
-      ctx.logger?.info?.(`[dsh-rea] RPC registered: ${RPC_PATH}`);
+      ctx.logger?.info?.(`[dsh-rea-manager] RPC registered: ${RPC_PATH}`);
       return () => disposeRpc?.();
-    }, 'dsh-rea: RPC route');
+    }, 'dsh-rea-manager: RPC route');
   });
 
-  ctx.logger?.info?.(`[dsh-rea] store=${storeRoot()} active=${loadActive()?.version ?? 'none'}`);
+  ctx.logger?.info?.(`[dsh-rea-manager] store=${storeRoot()} active=${loadActive()?.version ?? 'none'}`);
 
   return async () => {
     disposeTools?.();
@@ -177,13 +187,45 @@ async function handleRpc(request, ctx) {
       }
       case 'mirrors':
         return success(body.rpcId, await probeMirrors({ kind: wrapped.payload?.kind }));
+      /* -------- mirror site management (persisted on every mutation) ------- */
+      case 'mirrorList':
+        return success(body.rpcId, listMirrors());
+      case 'mirrorTest': {
+        const payload = wrapped.payload ?? {};
+        return success(body.rpcId, await testMirror({
+          id: typeof payload.id === 'string' ? payload.id : undefined,
+          candidate: payload.row && typeof payload.row === 'object' ? payload.row : undefined,
+          timeoutMs: Number.isInteger(payload.timeoutMs) ? payload.timeoutMs : undefined,
+        }));
+      }
+      case 'mirrorTestAll': {
+        const payload = wrapped.payload ?? {};
+        const results = await testAllMirrors({
+          kind: typeof payload.kind === 'string' ? payload.kind : undefined,
+          timeoutMs: Number.isInteger(payload.timeoutMs) ? payload.timeoutMs : undefined,
+        });
+        return success(body.rpcId, { results, ...listMirrors() });
+      }
+      case 'mirrorAdd':
+        return success(body.rpcId, createMirror(wrapped.payload?.row ?? {}));
+      case 'mirrorRemove':
+        return success(body.rpcId, deleteMirror(String(wrapped.payload?.id ?? '').trim()));
+      case 'mirrorUpdate':
+        return success(body.rpcId, editMirror(
+          String(wrapped.payload?.id ?? '').trim(),
+          wrapped.payload?.patch ?? {},
+        ));
+      case 'mirrorReset':
+        return success(body.rpcId, restoreMirrors());
+      case 'mirrorReorder':
+        return success(body.rpcId, reorderMirrors(Array.isArray(wrapped.payload?.ids) ? wrapped.payload.ids : []));
       case 'config':
         return success(body.rpcId, loadConfig());
       default:
         return failure(body.rpcId, 'unknown-endpoint', `unknown endpoint ${wrapped.endpoint}`);
     }
   } catch (error) {
-    ctx.logger?.warn?.(`[dsh-rea] rpc ${wrapped.endpoint} failed: ${String(error?.message ?? error)}`);
-    return failure(body.rpcId, 'dsh-rea-failed', String(error?.message ?? error));
+    ctx.logger?.warn?.(`[dsh-rea-manager] rpc ${wrapped.endpoint} failed: ${String(error?.message ?? error)}`);
+    return failure(body.rpcId, 'dsh-rea-manager-failed', String(error?.message ?? error));
   }
 }

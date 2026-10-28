@@ -1,11 +1,11 @@
 {
-  "name": "dsh-rea",
+  "name": "dsh-rea-manager",
   "version": "0.1.0",
   "description": "REA (Reverse Engineer Anything) for DeepSeek Harness: multi-mirror install, full version catalog, update & rollback, MCP tool bridge.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/User-Clb/dsh-rea.git"
+    "url": "git+https://github.com/User-Clb/dsh-rea-manager.git"
   },
   "type": "module",
   "main": "./index.js",
@@ -15,7 +15,7 @@
     "./package.json": "./package.json"
   },
   "bin": {
-    "dsh-rea": "./scripts/dsh-rea-cli.mjs"
+    "dsh-rea-manager": "./scripts/dsh-rea-manager-cli.mjs"
   },
   "files": [
     "index.js",

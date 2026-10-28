@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * dsh-rea CLI — drive the plugin without the harness.
+ * dsh-rea-manager CLI — drive the plugin without the harness.
  *
- *   node scripts/dsh-rea-cli.mjs status
- *   node scripts/dsh-rea-cli.mjs versions [--refresh] [--query 6.]
- *   node scripts/dsh-rea-cli.mjs install [version]
- *   node scripts/dsh-rea-cli.mjs update [version]
- *   node scripts/dsh-rea-cli.mjs rollback [version]
- *   node scripts/dsh-rea-cli.mjs mirrors [--kind git]
- *   node scripts/dsh-rea-cli.mjs call <tool> ['{"json":"args"}']
+ *   node scripts/dsh-rea-manager-cli.mjs status
+ *   node scripts/dsh-rea-manager-cli.mjs versions [--refresh] [--query 6.]
+ *   node scripts/dsh-rea-manager-cli.mjs install [version]
+ *   node scripts/dsh-rea-manager-cli.mjs update [version]
+ *   node scripts/dsh-rea-manager-cli.mjs rollback [version]
+ *   node scripts/dsh-rea-manager-cli.mjs mirrors [--kind git]
+ *   node scripts/dsh-rea-manager-cli.mjs call <tool> ['{"json":"args"}']
  */
 import process from 'node:process';
 
@@ -196,7 +196,7 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(`dsh-rea: ${String(error?.message ?? error)}`);
+  console.error(`dsh-rea-manager: ${String(error?.message ?? error)}`);
   if (Array.isArray(error?.attempts)) {
     for (const attempt of error.attempts) {
       console.error(`  ${attempt.channel}/${attempt.id}: ${attempt.ok ? 'ok' : 'fail'} ${attempt.reason ?? ''}`);
