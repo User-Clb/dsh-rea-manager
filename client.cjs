@@ -149,6 +149,7 @@ window.__ModuleLoader__.load({
       },
       badgeOk: { color: "#16a34a" },
       badgeBad: { color: "#dc2626" },
+      badgeBusy: { color: "#2563eb" },
       error: { color: "#dc2626", whiteSpace: "pre-wrap" },
       log: {
         maxHeight: "160px",
@@ -187,6 +188,8 @@ window.__ModuleLoader__.load({
       const [state, setState] = React.useState({ loading: true, versions: [], active: "", latest: "" });
       const [selected, setSelected] = React.useState("");
       const [hovered, setHovered] = React.useState("");
+      // version -> "installing" | "done" | "failed", rendered inside the row.
+      const [rowStatus, setRowStatus] = React.useState({});
 
       const refresh = React.useCallback(async (force) => {
         setBusy("refresh");
@@ -233,13 +236,16 @@ window.__ModuleLoader__.load({
         }
       }, [refresh, setBusy, setError, setMessage]);
 
-      const install = () => run("install", async () => {
-        const value = await callRpc(ctx, "install", { version: selected }, 1800000);
-        return `已安装并启用 REA ${value.version}（${value.channel}）${value.session?.tools ? `，MCP ${value.session.tools} 个工具` : ""}`;
-      });
-      const update = () => run("update", async () => {
-        const value = await callRpc(ctx, "update", { version: "latest" }, 1800000);
-        return `已更新到 ${value.version}（${value.channel}）${value.session?.tools ? `，MCP ${value.session.tools} 个工具` : ""}`;
+      const install = (entry) => run(`install-${entry.version}`, async () => {
+        setRowStatus((current) => ({ ...current, [entry.version]: "installing" }));
+        try {
+          const value = await callRpc(ctx, "install", { version: entry.version, activate: false }, 1800000);
+          setRowStatus((current) => ({ ...current, [entry.version]: "done" }));
+          return `已安装 REA ${value.version}（${value.channel}），尚未启用`;
+        } catch (cause) {
+          setRowStatus((current) => ({ ...current, [entry.version]: "failed" }));
+          throw cause;
+        }
       });
       const rollback = () => run("rollback", async () => {
         const value = await callRpc(ctx, "rollback", { version: selected }, 1800000);
@@ -247,7 +253,7 @@ window.__ModuleLoader__.load({
       });
       const activate = () => run("activate", async () => {
         const value = await callRpc(ctx, "activate", { version: selected }, 120000);
-        return `已切换为 ${value.active?.version ?? selected}`;
+        return `已启用 ${value.active?.version ?? selected}`;
       });
 
       const remove = (entry) => run(`remove-${entry.version}`, async () => {
@@ -258,62 +264,98 @@ window.__ModuleLoader__.load({
 
       const disabled = busy !== "" || state.loading;
       const rows = state.versions ?? [];
+      // Per-row outcome, so an install can show 安装中 / 已安装 / 安装失败 in place.
+      const statusOf = (version) => rowStatus[version] ?? "";
+      const selectedInstalled = rows.find((entry) => entry.version === selected)?.installed === true;
 
       return h("div", { style: styles.root },
         h("div", { style: styles.row },
           h("span", { style: styles.hint }, "当前版本"),
           h("strong", null, state.active || "未安装"),
           state.node ? h("span", { style: styles.hint }, `Node ${state.node.version}${state.node.satisfiesReaEngines ? "" : "（超出 engines）"}`) : null,
-          state.session?.running ? h("span", { style: styles.badge }, `MCP ${state.session.tools} 工具`) : null,
           state.latest ? h("span", { style: styles.hint }, `最新 ${state.latest}`) : null,
         ),
         h("div", { style: styles.row },
-          h("select", {
-            style: styles.select,
-            value: selected,
-            disabled,
-            onChange: (event) => setSelected(event.target.value),
-          }, rows.map((entry) => h("option", { key: entry.version, value: entry.version },
-            `${entry.version}${entry.version === state.active ? " · 当前" : ""}${entry.installed ? " · 已安装" : ""}${entry.date ? ` · ${entry.date.slice(0, 10)}` : ""}`))),
-          h("button", { type: "button", style: styles.buttonPrimary, disabled, onClick: install }, busy === "install" ? "安装中…" : "安装 / 切换到此版本"),
           h("button", { type: "button", style: styles.button, disabled, onClick: rollback }, busy === "rollback" ? "回退中…" : "回退到选中版本"),
-          h("button", { type: "button", style: styles.button, disabled, onClick: update }, busy === "update" ? "更新中…" : "更新到最新"),
-          h("button", { type: "button", style: styles.button, disabled, onClick: activate }, busy === "activate" ? "切换中…" : "仅启用已安装版本"),
+          h("button", {
+            type: "button",
+            style: styles.button,
+            disabled: disabled || !selectedInstalled || selected === state.active,
+            onClick: activate,
+          }, busy === "activate" ? "启用中…" : "启用选中的版本"),
           h("button", { type: "button", style: styles.button, disabled, onClick: () => refresh(true) }, busy === "refresh" ? "刷新中…" : "刷新版本列表"),
+          selected ? h("span", { style: styles.hint }, `选中 ${selected}`) : h("span", { style: styles.hint }, "点一行选中版本"),
         ),
-        h("div", { style: styles.list }, rows.map((entry) => h("div", {
-          key: entry.version,
-          style: {
-            ...styles.item,
-            ...(entry.version === state.active ? styles.itemActive : {}),
-            ...(entry.version === selected ? styles.itemSelected : {}),
-            ...(hovered === entry.version ? styles.itemHover : {}),
+        h("div", { style: styles.list }, rows.map((entry) => {
+          const isActive = entry.version === state.active;
+          const rowState = statusOf(entry.version);
+          const rowBusy = busy === `install-${entry.version}` || busy === `remove-${entry.version}`;
+          return h("div", {
+            key: entry.version,
+            style: {
+              ...styles.item,
+              ...(isActive ? styles.itemActive : {}),
+              ...(entry.version === selected ? styles.itemSelected : {}),
+              ...(hovered === entry.version ? styles.itemHover : {}),
+            },
+            onClick: () => setSelected(entry.version),
+            onMouseEnter: () => setHovered(entry.version),
+            onMouseLeave: () => setHovered((current) => (current === entry.version ? "" : current)),
           },
-          onClick: () => setSelected(entry.version),
-          onMouseEnter: () => setHovered(entry.version),
-          onMouseLeave: () => setHovered((current) => (current === entry.version ? "" : current)),
-        },
-          h("span", { style: { width: "68px" } }, entry.version),
-          h("span", { style: { ...styles.hint, width: "92px" } }, entry.date ? entry.date.slice(0, 10) : "—"),
-          h("span", { style: { ...styles.hint, width: "76px" } }, (entry.sources ?? []).join("+")),
-          entry.version === state.active ? h("span", { style: styles.badge }, "当前") : null,
-          entry.installed ? h("span", { style: styles.badge }, "已安装") : null,
-          entry.deprecated ? h("span", { style: styles.badge }, "已弃用") : null,
-          h("span", { style: { flex: 1 } }),
-          // Only installed, non-active versions can be deleted: the active one
-          // backs the running MCP child, so it must be switched away first.
-          entry.installed && entry.version !== state.active
-            ? h("button", {
-              type: "button",
-              style: styles.buttonDanger,
-              disabled,
-              onClick: (event) => {
-                event.stopPropagation();
-                remove(entry);
-              },
-            }, busy === `remove-${entry.version}` ? "删除中…" : "删除")
-            : null,
-        ))),
+            h("span", { style: { width: "68px" } }, entry.version),
+            h("span", { style: { ...styles.hint, width: "92px" } }, entry.date ? entry.date.slice(0, 10) : "—"),
+            h("span", { style: { ...styles.hint, width: "76px" } }, (entry.sources ?? []).join("+")),
+            isActive ? h("span", { style: styles.badge }, "当前") : null,
+            entry.installed ? h("span", { style: styles.badge }, "已安装") : null,
+            entry.deprecated ? h("span", { style: styles.badge }, "已弃用") : null,
+            rowState === "installing"
+              ? h("span", { style: { ...styles.badge, ...styles.badgeBusy } }, "安装中…")
+              : rowState === "failed"
+                ? h("span", { style: { ...styles.badge, ...styles.badgeBad } }, "安装失败")
+                : null,
+            h("span", { style: { flex: 1 } }),
+            // Mutually exclusive per row: not installed → 安装; installed and
+            // not the running one → 启用 + 删除; the running one → nothing.
+            !entry.installed
+              ? h("button", {
+                type: "button",
+                style: styles.buttonPrimary,
+                disabled: disabled || rowState === "installing",
+                onClick: (event) => {
+                  event.stopPropagation();
+                  install(entry);
+                },
+              }, rowState === "installing" ? "安装中…" : "安装")
+              : isActive
+                ? null
+                : [
+                  h("button", {
+                    key: "use",
+                    type: "button",
+                    style: styles.buttonTiny,
+                    disabled,
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      setSelected(entry.version);
+                      run("activate", async () => {
+                        const value = await callRpc(ctx, "activate", { version: entry.version }, 120000);
+                        return `已启用 ${value.active?.version ?? entry.version}`;
+                      });
+                    },
+                  }, "启用"),
+                  h("button", {
+                    key: "del",
+                    type: "button",
+                    style: styles.buttonDanger,
+                    disabled: rowBusy,
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      remove(entry);
+                    },
+                  }, busy === `remove-${entry.version}` ? "删除中…" : "删除"),
+                ],
+          );
+        })),
         state.loading ? h("div", { style: styles.hint }, "加载版本列表…") : null,
       );
     }

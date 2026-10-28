@@ -162,10 +162,16 @@ async function handleRpc(request, ctx) {
       case 'update':
       case 'rollback': {
         const target = wrapped.payload?.version;
-        await closeSession();
+        // Row-level "install" installs only: activation is a separate, explicit
+        // action so the list can offer 安装 / 启用 as mutually exclusive buttons.
+        const activateAfter = wrapped.payload?.activate !== false;
+        if (activateAfter) await closeSession();
         const record = typeof target === 'string' && target.trim()
           ? await installVersion(target.trim(), { force: wrapped.payload?.force === true })
           : await installVersion((await buildCatalog({ refresh: true })).latest, {});
+        if (!activateAfter) {
+          return success(body.rpcId, { version: record.version, channel: record.channel, activated: false });
+        }
         const node = await ensureNodeRuntime();
         activateRuntime({ ...record, nodePath: node.path, nodeVersion: node.version });
         const runtime = await requireRuntime();
@@ -176,7 +182,7 @@ async function handleRpc(request, ctx) {
         } catch (error) {
           session = { running: false, tools: 0, error: String(error?.message ?? error) };
         }
-        return success(body.rpcId, { version: record.version, channel: record.channel, session });
+        return success(body.rpcId, { version: record.version, channel: record.channel, activated: true, session });
       }
       case 'remove': {
         const version = String(wrapped.payload?.version ?? '').trim();
