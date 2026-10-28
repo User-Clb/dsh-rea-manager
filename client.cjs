@@ -134,6 +134,11 @@ window.__ModuleLoader__.load({
         borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.2))",
       },
       itemActive: { background: "rgba(37,99,235,.12)" },
+      // Rows carry two independent highlight states: the running version
+      // (itemActive, always visible) and the row under the cursor / the row
+      // the user picked (hover / selected), which drive the version dropdown.
+      itemHover: { background: "rgba(128,128,128,.12)" },
+      itemSelected: { background: "rgba(37,99,235,.2)", boxShadow: "inset 2px 0 0 #2563eb" },
       badge: {
         padding: "0 6px",
         borderRadius: "999px",
@@ -181,6 +186,7 @@ window.__ModuleLoader__.load({
     function VersionPanel({ ctx, setBusy, setError, setMessage, busy }) {
       const [state, setState] = React.useState({ loading: true, versions: [], active: "", latest: "" });
       const [selected, setSelected] = React.useState("");
+      const [hovered, setHovered] = React.useState("");
 
       const refresh = React.useCallback(async (force) => {
         setBusy("refresh");
@@ -277,8 +283,15 @@ window.__ModuleLoader__.load({
         ),
         h("div", { style: styles.list }, rows.map((entry) => h("div", {
           key: entry.version,
-          style: { ...styles.item, ...(entry.version === state.active ? styles.itemActive : {}) },
+          style: {
+            ...styles.item,
+            ...(entry.version === state.active ? styles.itemActive : {}),
+            ...(entry.version === selected ? styles.itemSelected : {}),
+            ...(hovered === entry.version ? styles.itemHover : {}),
+          },
           onClick: () => setSelected(entry.version),
+          onMouseEnter: () => setHovered(entry.version),
+          onMouseLeave: () => setHovered((current) => (current === entry.version ? "" : current)),
         },
           h("span", { style: { width: "68px" } }, entry.version),
           h("span", { style: { ...styles.hint, width: "92px" } }, entry.date ? entry.date.slice(0, 10) : "—"),
@@ -315,6 +328,7 @@ window.__ModuleLoader__.load({
       const [adding, setAdding] = React.useState(false);
       const [testing, setTesting] = React.useState("");
       const [filter, setFilter] = React.useState("");
+      const [hovered, setHovered] = React.useState("");
 
       const apply = React.useCallback((value) => {
         if (!value || !Array.isArray(value.mirrors)) return;
@@ -473,7 +487,12 @@ window.__ModuleLoader__.load({
         h("div", { style: styles.list }, visible.map((mirror) => {
           const last = mirror.last;
           const stateText = last ? (last.ok ? `可用 ${last.ms}ms` : `失败 ${String(last.reason ?? "").slice(0, 48)}`) : "未测试";
-          return h("div", { key: mirror.id, style: styles.item },
+          return h("div", {
+            key: mirror.id,
+            style: { ...styles.item, ...(hovered === mirror.id ? styles.itemHover : {}) },
+            onMouseEnter: () => setHovered(mirror.id),
+            onMouseLeave: () => setHovered((current) => (current === mirror.id ? "" : current)),
+          },
             h("span", { style: { ...styles.badge, width: "38px", textAlign: "center" } }, mirror.kind),
             h("span", { style: { width: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: mirror.id }, mirror.id),
             mirror.origin === "custom"
@@ -554,6 +573,7 @@ window.__ModuleLoader__.load({
       const [group, setGroup] = React.useState("");
       const [onlyDisabled, setOnlyDisabled] = React.useState(false);
       const [detail, setDetail] = React.useState(null);
+      const [hovered, setHovered] = React.useState("");
 
       const applyList = React.useCallback((value) => {
         if (!value || !Array.isArray(value.tools)) return;
@@ -669,7 +689,13 @@ window.__ModuleLoader__.load({
         ),
         h("div", { style: styles.list }, (state.tools ?? []).map((tool) => h("div", {
           key: tool.name,
-          style: styles.item,
+          style: {
+            ...styles.item,
+            ...(detail?.name === tool.name ? styles.itemSelected : {}),
+            ...(hovered === tool.name ? styles.itemHover : {}),
+          },
+          onMouseEnter: () => setHovered(tool.name),
+          onMouseLeave: () => setHovered((current) => (current === tool.name ? "" : current)),
         },
           h("span", { style: { ...styles.badge, ...(tool.enabled ? styles.badgeOk : styles.badgeBad), width: "34px", textAlign: "center" } }, tool.enabled ? "开" : "关"),
           h("span", { style: { width: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.name }, tool.name),
