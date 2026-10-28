@@ -14,7 +14,7 @@
 import { registerTools, requireRuntime } from './lib/tools.js';
 import { loadActive, loadConfig } from './lib/config.js';
 import { buildCatalog } from './lib/catalog.js';
-import { installVersion, activateRuntime, listInstalled, inspectRuntime } from './lib/install.js';
+import { installVersion, activateRuntime, listInstalled, inspectRuntime, removeInstalledVersion } from './lib/install.js';
 import { ensureNodeRuntime } from './lib/node-runtime.js';
 import { closeSession, getSession, sessionState } from './lib/mcp-client.js';
 import { probeMirrors } from './lib/health.js';
@@ -177,6 +177,18 @@ async function handleRpc(request, ctx) {
           session = { running: false, tools: 0, error: String(error?.message ?? error) };
         }
         return success(body.rpcId, { version: record.version, channel: record.channel, session });
+      }
+      case 'remove': {
+        const version = String(wrapped.payload?.version ?? '').trim();
+        const value = removeInstalledVersion(version);
+        // Return the refreshed view so the panel updates install badges at once.
+        const active = loadActive();
+        const installed = new Set(listInstalled().map((entry) => entry.version));
+        return success(body.rpcId, {
+          removed: value,
+          active: active?.version ?? '',
+          installed: [...installed],
+        });
       }
       case 'activate': {
         const version = String(wrapped.payload?.version ?? '').trim();

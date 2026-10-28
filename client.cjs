@@ -244,6 +244,12 @@ window.__ModuleLoader__.load({
         return `已切换为 ${value.active?.version ?? selected}`;
       });
 
+      const remove = (entry) => run(`remove-${entry.version}`, async () => {
+        const value = await callRpc(ctx, "remove", { version: entry.version }, 120000);
+        const mb = ((value.removed?.freedBytes ?? 0) / 1048576).toFixed(1);
+        return `已删除 REA ${entry.version}，释放 ${mb} MB`;
+      });
+
       const disabled = busy !== "" || state.loading;
       const rows = state.versions ?? [];
 
@@ -280,6 +286,20 @@ window.__ModuleLoader__.load({
           entry.version === state.active ? h("span", { style: styles.badge }, "当前") : null,
           entry.installed ? h("span", { style: styles.badge }, "已安装") : null,
           entry.deprecated ? h("span", { style: styles.badge }, "已弃用") : null,
+          h("span", { style: { flex: 1 } }),
+          // Only installed, non-active versions can be deleted: the active one
+          // backs the running MCP child, so it must be switched away first.
+          entry.installed && entry.version !== state.active
+            ? h("button", {
+              type: "button",
+              style: styles.buttonDanger,
+              disabled,
+              onClick: (event) => {
+                event.stopPropagation();
+                remove(entry);
+              },
+            }, busy === `remove-${entry.version}` ? "删除中…" : "删除")
+            : null,
         ))),
         state.loading ? h("div", { style: styles.hint }, "加载版本列表…") : null,
       );
