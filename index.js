@@ -12,7 +12,7 @@
  * updates and rollbacks never touch the harness profile's dependency tree.
  */
 import { registerTools, requireRuntime } from './lib/tools.js';
-import { loadActive, loadConfig } from './lib/config.js';
+import { loadActive, loadConfig, saveConfig } from './lib/config.js';
 import { buildCatalog } from './lib/catalog.js';
 import { installVersion, activateRuntime, listInstalled, inspectRuntime, removeInstalledVersion } from './lib/install.js';
 import { ensureNodeRuntime } from './lib/node-runtime.js';
@@ -248,6 +248,21 @@ async function handleRpc(request, ctx) {
         return success(body.rpcId, await stopMcp());
       case 'mcpRestart':
         return success(body.rpcId, await restartMcp());
+      case 'mcpConfig': {
+        // Each service parameter is adjustable on its own. `saveConfig` clamps
+        // and normalises, so an out-of-range value is corrected rather than
+        // rejected; the refreshed status shows the effective result.
+        const payload = wrapped.payload ?? {};
+        const patch = {};
+        if (typeof payload.enabled === 'boolean') patch.mcpEnabled = payload.enabled;
+        if (typeof payload.autoStart === 'boolean') patch.mcpAutoStart = payload.autoStart;
+        if (typeof payload.autoReconnect === 'boolean') patch.mcpAutoReconnect = payload.autoReconnect;
+        if (Number.isInteger(payload.startupTimeoutMs)) patch.mcpStartupTimeoutMs = payload.startupTimeoutMs;
+        if (Number.isInteger(payload.toolTimeoutMs)) patch.mcpToolTimeoutMs = payload.toolTimeoutMs;
+        if (Object.keys(patch).length === 0) return failure(body.rpcId, 'empty-patch', '没有可更新的服务参数');
+        saveConfig(patch);
+        return success(body.rpcId, mcpStatus());
+      }
       /* ------------------------- MCP tool catalog -------------------------- */
       case 'toolList': {
         const payload = wrapped.payload ?? {};

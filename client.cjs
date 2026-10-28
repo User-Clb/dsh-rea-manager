@@ -180,6 +180,29 @@ window.__ModuleLoader__.load({
         border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
         background: "var(--dsw-alias-bg-layer-2, rgba(128,128,128,.06))",
       },
+      // One editable service parameter: label above, control below.
+      field: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
+        fontSize: "11px",
+      },
+      dividerV: {
+        width: "1px",
+        alignSelf: "stretch",
+        background: "var(--dsw-alias-border-l2, #d9d9d9)",
+        opacity: 0.6,
+      },
+      inputNarrow: {
+        width: "64px",
+        height: "24px",
+        padding: "0 6px",
+        borderRadius: "6px",
+        border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
+        background: "var(--dsw-alias-bg-layer-1, #fff)",
+        color: "inherit",
+        fontSize: "12px",
+      },
     };
 
     /* ------------------------------------------------------------ versions */
@@ -568,10 +591,20 @@ window.__ModuleLoader__.load({
 
     // Standalone service control. It sits between the tab row and the tab body
     // so start / stop / restart is reachable from every tab, not buried inside
-    // the tool list.
+    // the tool list. Every parameter below is editable in place.
     function McpBar({ ctx, busy, setBusy, setError, setMessage, status, onStatus }) {
       const running = status?.running === true;
       const disabled = busy !== "";
+      const [draft, setDraft] = React.useState({});
+
+      // Keep the inputs in sync with the host whenever it reports new values.
+      React.useEffect(() => {
+        if (!status) return;
+        setDraft({
+          startup: String(Math.round((status.startupTimeoutMs ?? 60000) / 1000)),
+          tool: String(Math.round((status.toolTimeoutMs ?? 180000) / 1000)),
+        });
+      }, [status?.startupTimeoutMs, status?.toolTimeoutMs]);
 
       const act = async (action) => {
         const label = action === "start" ? "启动" : action === "stop" ? "停止" : "重启";
@@ -590,6 +623,34 @@ window.__ModuleLoader__.load({
         }
       };
 
+      const patch = async (label, payload) => {
+        setBusy(`cfg-${label}`);
+        setError("");
+        setMessage("");
+        try {
+          const next = await callRpc(ctx, "mcpConfig", payload, 60000);
+          onStatus?.(next);
+          setMessage(`已保存：${label}`);
+        } catch (cause) {
+          setError(String(cause?.message ?? cause));
+        } finally {
+          setBusy("");
+        }
+      };
+
+      // Timeouts are edited in seconds; the host stores milliseconds.
+      const commitTimeout = (field) => {
+        const seconds = Number(draft[field]);
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+          setError("超时必须为正整数秒");
+          return;
+        }
+        patch(field === "startup" ? "启动超时" : "调用超时",
+          field === "startup"
+            ? { startupTimeoutMs: Math.round(seconds * 1000) }
+            : { toolTimeoutMs: Math.round(seconds * 1000) });
+      };
+
       return h("div", { style: styles.bar },
         h("span", { style: styles.title }, "REA 服务"),
         h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } },
@@ -600,10 +661,61 @@ window.__ModuleLoader__.load({
           busy === "mcp-restart" ? "重启中…" : "重启"),
         h("button", { type: "button", style: styles.buttonDanger, disabled: disabled || !running, onClick: () => act("stop") },
           busy === "mcp-stop" ? "停止中…" : "停止"),
-        status
-          ? h("span", { style: styles.hint },
-            `${status.enabled ? "允许启动" : "已显式停止"} · 超时 ${status.startupTimeoutMs}/${status.toolTimeoutMs}ms · 自动重连 ${status.autoReconnect ? "开" : "关"}`)
-          : h("span", { style: styles.hint }, "读取服务状态…"),
+        // --- per-parameter editors -------------------------------------------
+        h("span", { style: styles.dividerV }),
+        h("label", { style: styles.field },
+          h("span", { style: styles.hint }, "允许自动启动"),
+          h("input", {
+            type: "checkbox",
+            checked: status?.enabled !== false,
+            disabled,
+            onChange: (event) => patch("允许自动启动", { enabled: event.target.checked }),
+          }),
+        ),
+        h("label", { style: styles.field },
+          h("span", { style: styles.hint }, "崩溃自动重连"),
+          h("input", {
+            type: "checkbox",
+            checked: status?.autoReconnect !== false,
+            disabled,
+            onChange: (event) => patch("崩溃自动重连", { autoReconnect: event.target.checked }),
+          }),
+        ),
+        h("label", { style: styles.field },
+          h("span", { style: styles.hint }, "启动超时(秒)"),
+          h("input", {
+            type: "number",
+            min: 5,
+            max: 600,
+            style: styles.inputNarrow,
+            value: draft.startup ?? "",
+            disabled,
+            onChange: (event) => setDraft((current) => ({ ...current, startup: event.target.value })),
+            onBlur: () => commitTimeout("startup"),
+            onKeyDown: (event) => {
+              if (event.key === "Enter") commitTimeout("startup");
+            },
+          }),
+        ),
+        h("label", { style: styles.field },
+          h("span", { style: styles.hint }, "调用超时(秒)"),
+          h("input", {
+            type: "number",
+            min: 5,
+            max: 3600,
+            style: styles.inputNarrow,
+            value: draft.tool ?? "",
+            disabled,
+            onChange: (event) => setDraft((current) => ({ ...current, tool: event.target.value })),
+            onBlur: () => commitTimeout("tool"),
+            onKeyDown: (event) => {
+              if (event.key === "Enter") commitTimeout("tool");
+            },
+          }),
+        ),
+        status && status.autoStart === false
+          ? h("span", { style: styles.hint }, "（惰性启动已关闭）")
+          : null,
       );
     }
 
