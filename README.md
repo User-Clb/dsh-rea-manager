@@ -8,8 +8,11 @@
 - **更新**：`rea_update` 拉最新发布版，旧版本保留在磁盘上。
 - **回退**：`rea_versions` 给出**全部**版本记录列表（git tag ∪ npm 版本，含日期与来源），`rea_rollback {"version":"6.5.0"}` 一键切回；GUI 设置页同样可选。
 - **调工具**：REA 有 229 个分析工具（原生二进制、APK/Android、Electron/JS、Firmware、Frida、ADB、Ghidra/IDA/Hopper、证据比对……）。插件不把它们全塞进模型工具表（那会吃掉 300 KB~3.5 MB 的 schema 预算），而是暴露 3 个入口：`rea_tools` 检索、`rea_tool_schema` 取参数、`rea_call` 执行。
+- **工具目录管理**：`rea_tool_admin` 可列出/检索全部工具（含分组、参数数量、启用状态），按名字或分组批量启用/禁用，或查看单个工具的完整 schema。被禁用的工具不会出现在 `rea_tools` 里，`rea_call` 也会明确拒绝。设置页「MCP 工具」标签提供同样的界面。
+- **服务进程控制**：`rea_mcp` 支持 `status` / `start` / `stop` / `restart`。停止是显式意图并持久化，不会在下次调用时自动复活。设置页顶部的「REA 服务」卡片可启动、重启、停止，并逐个调整参数（允许自动启动、崩溃自动重连、启动超时、调用超时），改完即时落盘。
 - **多镜像兜底**：git（GitHub 直连 + Gitee 镜像 + 40 个 GitHub 加速站）、npm（npmmirror / cnpmjs / 腾讯 / 官方 / USTC / yarnpkg）、Node 二进制（npmmirror CDN / nodejs.org）。任一环节失败自动换下一个，`rea_mirrors` 可实测延迟并落盘健康度。
 - **代理站点管理**：设置页「代理站点」标签可测试单个/全部站点、移除、添加自定义代理（支持 `{url}` 占位符）、按延迟重排、一键**重置为默认站点**；每次改动立即写入 `config.json` 持久化。模型侧对应 `rea_mirror_admin`。
+- **版本删除**：已安装但未在使用的版本可以删除并释放磁盘空间；当前使用中的版本受保护，需要先切换到其他版本。
 
 ## 安装
 
@@ -43,10 +46,14 @@ node scripts/dsh-rea-manager-cli.mjs call inspect_android_package '{"apk_path":"
 | `rea_install` | 安装并启用某版本（`latest` / `6.8.0` / 唯一前缀） |
 | `rea_update` | 更新到最新（保留旧版本，可回退） |
 | `rea_rollback` | 回退到指定历史版本（缺省=回退一档） |
-| `rea_tools` | 检索 REA 的 229 个工具 |
+| `rea_remove` | 删除已安装但未使用的版本，报告释放的空间；当前版本受保护 |
+| `rea_tools` | 检索 REA 的 229 个工具（自动隐藏已禁用项） |
 | `rea_tool_schema` | 取单个工具的完整入参 schema |
-| `rea_call` | 执行任意 REA 工具 |
+| `rea_call` | 执行任意 REA 工具（被禁用的工具会被拒绝） |
+| `rea_tool_admin` | 工具目录管理：list / enable / disable / bulk / reset / schema |
+| `rea_mcp` | 服务进程控制：status / start / stop / restart |
 | `rea_mirrors` | 探测全部镜像，报告延迟与可达性 |
+| `rea_mirror_admin` | 代理站点管理：list / test / testAll / add / remove / update / reset / reorder |
 | `rea_config` | 读写配置（源偏好、固定版本、Node 路径、镜像、超时、schema 档位、保留版本数） |
 | `rea_uninstall` | 停用并可选删除已装版本 |
 
@@ -62,9 +69,12 @@ node scripts/dsh-rea-manager-cli.mjs call inspect_android_package '{"apk_path":"
   "mirrors": [],                 // 追加/禁用镜像：{ "id": "...", "disabled": true }
   "networkTimeoutMs": 120000,
   "probeTimeoutMs": 12000,
-  "mcpStartupTimeoutMs": 60000,
-  "mcpToolTimeoutMs": 180000,
-  "mcpAutoReconnect": true,
+  "mcpEnabled": true,            // false = 已显式停止，工具调用会被拒绝直到手动启动
+  "mcpAutoStart": true,          // 首次调用时惰性拉起子进程
+  "mcpStartupTimeoutMs": 60000,  // 启动预算：拉起 + MCP 握手
+  "mcpToolTimeoutMs": 180000,    // 单次工具调用预算
+  "mcpAutoReconnect": true,      // 子进程意外退出后自动重连
+  "disabledTools": [],           // 被隐藏/拒绝的 REA 工具名
   "inputSchemaProfile": "compact",
   "outputSchemaProfile": "off",
   "keepVersions": 6,
@@ -74,6 +84,18 @@ node scripts/dsh-rea-manager-cli.mjs call inspect_android_package '{"apk_path":"
 ```
 
 `inputSchemaProfile: full` + `outputSchemaProfile: full` 会还原 REA 的完整字段说明，代价是工具表体积从约 300 KB 涨到 3.5 MB。
+
+## 设置页
+
+DSH 设置里打开「REA 逆向分析」，从上到下是：
+
+1. **REA 服务卡片**：状态徽章、启动/重启/停止，以及四个可单独调整的参数（允许自动启动、崩溃自动重连、启动超时、调用超时）。参数改动即时保存，控件会回读主机实际值。
+2. **三个标签页**：
+   - **版本管理**：摘要条显示当前版本 / Node / 最新 / 选中项。列表每行按状态给出互斥操作 —— 未安装显示「安装」（行内显示安装中 / 安装失败），已安装且非当前显示「启用」+「删除」，当前使用中的行不提供删除。
+   - **MCP 工具**：按名字或描述搜索、按分组筛选、只看已禁用；单行可查看 schema 或启用/禁用，也可按当前筛选条件批量启用/禁用，或一键全部启用。
+   - **代理站点**：测试单个或全部站点、添加自定义代理、移除、按延迟重排、重置为默认站点。
+
+列表行都支持悬停高亮与点击选中，表头固定对齐。
 
 ## 目录结构
 
@@ -86,7 +108,7 @@ node scripts/dsh-rea-manager-cli.mjs call inspect_android_package '{"apk_path":"
   versions/<v>/      每个版本一份独立安装
   git/               部分克隆（--filter=blob:none），用于列 tag 与源码构建
   node/<v>/          自动下载的 Node 运行时
-  logs/dsh-rea-manager.log   安装/探测日志
+  logs/              插件日志（dsh-rea-manager.log 为插件自身，dsh-rea.log 为服务子进程）
 ```
 
 ## 说明
