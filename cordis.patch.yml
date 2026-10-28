@@ -1,0 +1,10 @@
+# dsh-rea 的组合包 patch 层。
+#
+# 单包同时提供 Host 与 Client 两端：
+#   - dsh-rea        Host 半区（index.js：REA 版本目录、镜像链安装/更新/回退、MCP 工具桥）
+#   - dsh-rea-client Client 半区（client.cjs：设置页的版本列表、更新与回退面板）
+- insert:
+    - id: dsh-rea
+      name: dsh-rea
+    - id: dsh-rea-client
+      name: dsh-rea

@@ -1,0 +1,189 @@
+/**
+ * dsh-rea — REA (Reverse Engineer Anything) for DeepSeek Harness.
+ *
+ * Host half. Registers:
+ *   - the REA tool surface (`rea_status`, `rea_versions`, `rea_install`,
+ *     `rea_update`, `rea_rollback`, `rea_tools`, `rea_tool_schema`, `rea_call`,
+ *     `rea_mirrors`, `rea_config`, `rea_uninstall`);
+ *   - one system-prompt section describing the workflow;
+ *   - a plugin RPC route so a client half can drive the same operations.
+ *
+ * The plugin owns its own installation store (`<DSH_HOME>/dsh-rea`), so REA
+ * updates and rollbacks never touch the harness profile's dependency tree.
+ */
+import { registerTools, requireRuntime } from './lib/tools.js';
+import { loadActive, loadConfig } from './lib/config.js';
+import { buildCatalog } from './lib/catalog.js';
+import { installVersion, activateRuntime, listInstalled, inspectRuntime } from './lib/install.js';
+import { ensureNodeRuntime } from './lib/node-runtime.js';
+import { closeSession, getSession, sessionState } from './lib/mcp-client.js';
+import { probeMirrors } from './lib/health.js';
+import { storeRoot } from './lib/paths.js';
+
+export const name = 'dsh-rea';
+export const inject = ['tools', 'systemPrompt'];
+
+const RPC_PATH = '/api/plugin-rpc/dsh-rea';
+const RPC_METHOD = 'plugin-rpc/dsh-rea';
+
+const PROMPT_SECTION = `REA (Reverse Engineer Anything) is available through dsh-rea. Workflow:
+- rea_status — active version, installed versions, Node runtime, MCP session.
+- rea_versions — the complete release list (git tags + npm), newest first.
+- rea_install {"version":"6.8.0"} — install + activate one version; "latest" or a unique prefix works.
+- rea_update — move to the newest release; the old version stays installed.
+- rea_rollback {"version":"6.5.0"} — return to a specific historical version.
+- rea_tools {"query":"apk"} — search REA's 200+ analysis tools; rea_tool_schema for exact arguments.
+- rea_call {"tool":"inspect_android_package","args":{...}} — run one REA tool.
+- rea_mirrors — probe every git / npm / node mirror and report which are reachable.
+All network access goes through a mirror chain (GitHub accelerators, Gitee mirror, npm registries, Node binary mirrors) and falls back automatically.`;
+
+export function apply(ctx) {
+  const disposeTools = registerTools(ctx);
+
+  ctx.systemPrompt?.section?.({
+    name: 'plugin:dsh-rea',
+    order: 300,
+    text: PROMPT_SECTION,
+  });
+
+  // Warm the catalog in the background so the first model call is instant.
+  setTimeout(() => {
+    buildCatalog({}).catch(() => {});
+  }, 2500).unref?.();
+
+  let disposeRpc;
+  ctx.inject(['connection'], (scope) => {
+    scope.effect(() => {
+      disposeRpc = scope.connection.fetch.register({
+        path: RPC_PATH,
+        methods: ['POST'],
+        requestBody: 'buffered',
+        fetch: (request) => handleRpc(request, ctx),
+      });
+      ctx.logger?.info?.(`[dsh-rea] RPC registered: ${RPC_PATH}`);
+      return () => disposeRpc?.();
+    }, 'dsh-rea: RPC route');
+  });
+
+  ctx.logger?.info?.(`[dsh-rea] store=${storeRoot()} active=${loadActive()?.version ?? 'none'}`);
+
+  return async () => {
+    disposeTools?.();
+    await closeSession().catch(() => {});
+  };
+}
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function success(rpcId, value) {
+  return jsonResponse({ type: 'server-response', rpcId, result: { ok: true, value } });
+}
+
+function failure(rpcId, code, message) {
+  return jsonResponse({ type: 'server-response', rpcId, result: { ok: false, error: { code, message, details: {} } } });
+}
+
+async function handleRpc(request, ctx) {
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return new Response('invalid JSON request body', { status: 400 });
+  }
+  if (body === null || typeof body !== 'object' || body.type !== 'client-request'
+    || typeof body.rpcId !== 'string' || body.method !== RPC_METHOD) {
+    return new Response('invalid client-request envelope', { status: 400 });
+  }
+  const wrapped = body.payload;
+  if (!wrapped || typeof wrapped !== 'object' || typeof wrapped.endpoint !== 'string') {
+    return failure(body.rpcId, 'invalid-request', 'payload must be { endpoint, payload }');
+  }
+  try {
+    switch (wrapped.endpoint) {
+      case 'status': {
+        const active = loadActive();
+        const config = loadConfig();
+        let session = sessionState();
+        if (active?.entry) {
+          try {
+            const runtime = await requireRuntime();
+            if (runtime) {
+              await getSession(runtime);
+              session = sessionState();
+            }
+          } catch (error) {
+            session = { ...session, error: String(error?.message ?? error) };
+          }
+        }
+        return success(body.rpcId, {
+          active,
+          installed: listInstalled().map((entry) => ({ version: entry.version, channel: entry.channel, installedAt: entry.installedAt })),
+          session,
+          config,
+          store: storeRoot(),
+        });
+      }
+      case 'versions': {
+        const catalog = await buildCatalog({ refresh: wrapped.payload?.refresh === true });
+        const active = loadActive();
+        const installed = new Set(listInstalled().map((entry) => entry.version));
+        return success(body.rpcId, {
+          generatedAt: catalog.generatedAt,
+          latest: catalog.latest,
+          active: active?.version ?? '',
+          versions: catalog.versions.map((entry) => ({
+            version: entry.version,
+            date: entry.date ?? '',
+            sources: entry.sources ?? [],
+            installed: installed.has(entry.version),
+            active: entry.version === active?.version,
+            deprecated: entry.deprecated === true,
+          })),
+        });
+      }
+      case 'install':
+      case 'update':
+      case 'rollback': {
+        const target = wrapped.payload?.version;
+        await closeSession();
+        const record = typeof target === 'string' && target.trim()
+          ? await installVersion(target.trim(), { force: wrapped.payload?.force === true })
+          : await installVersion((await buildCatalog({ refresh: true })).latest, {});
+        const node = await ensureNodeRuntime();
+        activateRuntime({ ...record, nodePath: node.path, nodeVersion: node.version });
+        const runtime = await requireRuntime();
+        let session = { running: false, tools: 0 };
+        try {
+          await getSession(runtime);
+          session = sessionState();
+        } catch (error) {
+          session = { running: false, tools: 0, error: String(error?.message ?? error) };
+        }
+        return success(body.rpcId, { version: record.version, channel: record.channel, session });
+      }
+      case 'activate': {
+        const version = String(wrapped.payload?.version ?? '').trim();
+        const record = inspectRuntime(version);
+        if (!record) return failure(body.rpcId, 'not-installed', `REA ${version} is not installed`);
+        await closeSession();
+        const node = await ensureNodeRuntime();
+        const active = activateRuntime({ ...record, nodePath: node.path, nodeVersion: node.version });
+        return success(body.rpcId, { active });
+      }
+      case 'mirrors':
+        return success(body.rpcId, await probeMirrors({ kind: wrapped.payload?.kind }));
+      case 'config':
+        return success(body.rpcId, loadConfig());
+      default:
+        return failure(body.rpcId, 'unknown-endpoint', `unknown endpoint ${wrapped.endpoint}`);
+    }
+  } catch (error) {
+    ctx.logger?.warn?.(`[dsh-rea] rpc ${wrapped.endpoint} failed: ${String(error?.message ?? error)}`);
+    return failure(body.rpcId, 'dsh-rea-failed', String(error?.message ?? error));
+  }
+}

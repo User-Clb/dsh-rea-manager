@@ -1,0 +1,57 @@
+{
+  "name": "dsh-rea",
+  "version": "0.1.0",
+  "description": "REA (Reverse Engineer Anything) for DeepSeek Harness: multi-mirror install, full version catalog, update & rollback, MCP tool bridge.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/User-Clb/dsh-rea.git"
+  },
+  "type": "module",
+  "main": "./index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.cjs",
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "dsh-rea": "./scripts/dsh-rea-cli.mjs"
+  },
+  "files": [
+    "index.js",
+    "client.cjs",
+    "lib",
+    "scripts",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "rea",
+    "reverse-engineering",
+    "mcp",
+    "mcp-server"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
