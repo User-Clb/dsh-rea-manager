@@ -703,12 +703,15 @@ window.__ModuleLoader__.load({
 
       const tabs = [
         ["versions", "版本管理"],
-        ["tools", "REA 工具"],
+        ["tools", "MCP 工具"],
         ["mirrors", "代理站点"],
       ];
 
       return h("div", { style: styles.root },
         h("div", { style: styles.title }, "REA 逆向分析管理器"),
+        // Service control sits directly under the title, above the tabs: it is
+        // global to the plugin, not part of any single tab.
+        h(McpBar, { ctx, busy, setBusy, setError, setMessage, status: mcp, onStatus: setMcp }),
         h("div", { style: styles.row },
           tabs.map(([id, label]) => h("button", {
             key: id,
@@ -718,7 +721,6 @@ window.__ModuleLoader__.load({
           }, label)),
           busy ? h("span", { style: styles.hint }, "处理中…") : null,
         ),
-        h(McpBar, { ctx, busy, setBusy, setError, setMessage, status: mcp, onStatus: setMcp }),
         tab === "versions"
           ? h(VersionPanel, { ctx, busy, setBusy, setError, setMessage })
           : tab === "tools"
