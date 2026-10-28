@@ -38,9 +38,26 @@ window.__ModuleLoader__.load({
     }
 
     const styles = {
-      root: { display: "flex", flexDirection: "column", gap: "10px", fontSize: "12px" },
+      root: { display: "flex", flexDirection: "column", gap: "14px", fontSize: "12px" },
       row: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
-      title: { fontSize: "13px", fontWeight: 600 },
+      // Header block: title + one-line subtitle, separated from the body.
+      header: {
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
+        paddingBottom: "10px",
+        borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.25))",
+      },
+      title: { fontSize: "14px", fontWeight: 600, lineHeight: "20px" },
+      subtitle: { fontSize: "11px", color: "var(--dsw-alias-label-secondary, #888)" },
+      // Tab strip: underline style instead of boxed tabs, so it reads as a
+      // section switcher rather than a row of buttons.
+      tabStrip: {
+        display: "flex",
+        alignItems: "center",
+        gap: "18px",
+        borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.25))",
+      },
       hint: { color: "var(--dsw-alias-label-secondary, #888)" },
       button: {
         height: "26px",
@@ -83,22 +100,22 @@ window.__ModuleLoader__.load({
         fontSize: "11px",
       },
       tab: {
-        height: "26px",
-        padding: "0 12px",
-        borderRadius: "6px 6px 0 0",
-        border: "1px solid transparent",
-        borderBottom: "none",
+        height: "32px",
+        padding: "0 2px",
+        border: "none",
+        borderBottom: "2px solid transparent",
+        borderRadius: 0,
         background: "transparent",
         color: "inherit",
         cursor: "pointer",
         fontSize: "12px",
-        opacity: 0.65,
+        opacity: 0.6,
+        marginBottom: "-1px",
       },
       tabActive: {
         opacity: 1,
         fontWeight: 600,
-        border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
-        background: "var(--dsw-alias-bg-layer-2, rgba(128,128,128,.08))",
+        borderBottom: "2px solid #2563eb",
       },
       select: {
         height: "26px",
@@ -169,22 +186,31 @@ window.__ModuleLoader__.load({
         borderRadius: "8px",
       },
       mono: { fontFamily: "ui-monospace, monospace", fontSize: "11px", opacity: 0.8 },
-      // Service control strip: pinned between the tab row and the tab body.
+      // Service card: a status/action row, then a dashed-separated parameter
+      // row. Two rows instead of one long wrapping strip.
       bar: {
         display: "flex",
-        alignItems: "center",
-        gap: "8px",
-        flexWrap: "wrap",
-        padding: "6px 8px",
-        borderRadius: "8px",
+        flexDirection: "column",
+        gap: "10px",
+        padding: "10px 12px",
+        borderRadius: "10px",
         border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
         background: "var(--dsw-alias-bg-layer-2, rgba(128,128,128,.06))",
+      },
+      barTop: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
+      barFields: {
+        display: "flex",
+        alignItems: "flex-end",
+        gap: "16px",
+        flexWrap: "wrap",
+        paddingTop: "10px",
+        borderTop: "1px dashed var(--dsw-alias-border-l2, rgba(128,128,128,.35))",
       },
       // One editable service parameter: label above, control below.
       field: {
         display: "flex",
         flexDirection: "column",
-        gap: "2px",
+        gap: "3px",
         fontSize: "11px",
       },
       dividerV: {
@@ -194,15 +220,38 @@ window.__ModuleLoader__.load({
         opacity: 0.6,
       },
       inputNarrow: {
-        width: "64px",
-        height: "24px",
-        padding: "0 6px",
+        width: "68px",
+        height: "26px",
+        padding: "0 8px",
         borderRadius: "6px",
         border: "1px solid var(--dsw-alias-border-l2, #d9d9d9)",
         background: "var(--dsw-alias-bg-layer-1, #fff)",
         color: "inherit",
         fontSize: "12px",
       },
+      // List shell with a sticky header row and aligned columns.
+      listBox: { display: "flex", flexDirection: "column", gap: "0" },
+      listHead: {
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        padding: "6px 10px",
+        fontSize: "11px",
+        color: "var(--dsw-alias-label-secondary, #888)",
+        borderBottom: "1px solid var(--dsw-alias-border-l2, rgba(128,128,128,.3))",
+      },
+      colVersion: { width: "64px", fontVariantNumeric: "tabular-nums" },
+      colDate: { width: "92px", fontVariantNumeric: "tabular-nums" },
+      colSrc: { width: "80px" },
+      colKind: { width: "40px", textAlign: "center" },
+      colName: { width: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+      colGroup: { width: "112px" },
+      colParams: { width: "64px" },
+      actions: { display: "flex", gap: "6px", justifyContent: "flex-end", minWidth: "124px" },
+      // Summary strip: label + value pairs, wrapping on narrow widths.
+      summary: { display: "flex", alignItems: "center", gap: "18px", flexWrap: "wrap" },
+      summaryItem: { display: "inline-flex", alignItems: "baseline", gap: "6px" },
+      toolbar: { display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" },
     };
 
     /* ------------------------------------------------------------ versions */
@@ -292,13 +341,29 @@ window.__ModuleLoader__.load({
       const selectedInstalled = rows.find((entry) => entry.version === selected)?.installed === true;
 
       return h("div", { style: styles.root },
-        h("div", { style: styles.row },
-          h("span", { style: styles.hint }, "当前版本"),
-          h("strong", null, state.active || "未安装"),
-          state.node ? h("span", { style: styles.hint }, `Node ${state.node.version}${state.node.satisfiesReaEngines ? "" : "（超出 engines）"}`) : null,
-          state.latest ? h("span", { style: styles.hint }, `最新 ${state.latest}`) : null,
+        // Summary strip: what is running now, and what the newest release is.
+        h("div", { style: styles.summary },
+          h("span", { style: styles.summaryItem },
+            h("span", { style: styles.hint }, "当前版本"),
+            h("strong", null, state.active || "未安装"),
+          ),
+          state.node
+            ? h("span", { style: styles.summaryItem },
+              h("span", { style: styles.hint }, "Node"),
+              h("span", null, `${state.node.version}${state.node.satisfiesReaEngines ? "" : "（超出 engines）"}`))
+            : null,
+          state.latest
+            ? h("span", { style: styles.summaryItem },
+              h("span", { style: styles.hint }, "最新"),
+              h("span", null, state.latest))
+            : null,
+          selected
+            ? h("span", { style: styles.summaryItem },
+              h("span", { style: styles.hint }, "选中"),
+              h("span", null, selected))
+            : h("span", { style: { ...styles.hint, fontSize: "11px" } }, "点一行选中版本"),
         ),
-        h("div", { style: styles.row },
+        h("div", { style: styles.toolbar },
           h("button", { type: "button", style: styles.button, disabled, onClick: rollback }, busy === "rollback" ? "回退中…" : "回退到选中版本"),
           h("button", {
             type: "button",
@@ -306,79 +371,91 @@ window.__ModuleLoader__.load({
             disabled: disabled || !selectedInstalled || selected === state.active,
             onClick: activate,
           }, busy === "activate" ? "启用中…" : "启用选中的版本"),
+          h("span", { style: { flex: 1 } }),
           h("button", { type: "button", style: styles.button, disabled, onClick: () => refresh(true) }, busy === "refresh" ? "刷新中…" : "刷新版本列表"),
-          selected ? h("span", { style: styles.hint }, `选中 ${selected}`) : h("span", { style: styles.hint }, "点一行选中版本"),
         ),
-        h("div", { style: styles.list }, rows.map((entry) => {
-          const isActive = entry.version === state.active;
-          const rowState = statusOf(entry.version);
-          const rowBusy = busy === `install-${entry.version}` || busy === `remove-${entry.version}`;
-          return h("div", {
-            key: entry.version,
-            style: {
-              ...styles.item,
-              ...(isActive ? styles.itemActive : {}),
-              ...(entry.version === selected ? styles.itemSelected : {}),
-              ...(hovered === entry.version ? styles.itemHover : {}),
+        h("div", { style: styles.listBox },
+          h("div", { style: styles.listHead },
+            h("span", { style: styles.colVersion }, "版本"),
+            h("span", { style: styles.colDate }, "发布"),
+            h("span", { style: styles.colSrc }, "来源"),
+            h("span", { style: { flex: 1 } }, "状态"),
+            h("span", { style: { ...styles.actions, minWidth: "124px" } }, "操作"),
+          ),
+          h("div", { style: styles.list }, rows.map((entry) => {
+            const isActive = entry.version === state.active;
+            const rowState = statusOf(entry.version);
+            const rowBusy = busy === `install-${entry.version}` || busy === `remove-${entry.version}`;
+            return h("div", {
+              key: entry.version,
+              style: {
+                ...styles.item,
+                ...(isActive ? styles.itemActive : {}),
+                ...(entry.version === selected ? styles.itemSelected : {}),
+                ...(hovered === entry.version ? styles.itemHover : {}),
+              },
+              onClick: () => setSelected(entry.version),
+              onMouseEnter: () => setHovered(entry.version),
+              onMouseLeave: () => setHovered((current) => (current === entry.version ? "" : current)),
             },
-            onClick: () => setSelected(entry.version),
-            onMouseEnter: () => setHovered(entry.version),
-            onMouseLeave: () => setHovered((current) => (current === entry.version ? "" : current)),
-          },
-            h("span", { style: { width: "68px" } }, entry.version),
-            h("span", { style: { ...styles.hint, width: "92px" } }, entry.date ? entry.date.slice(0, 10) : "—"),
-            h("span", { style: { ...styles.hint, width: "76px" } }, (entry.sources ?? []).join("+")),
-            isActive ? h("span", { style: styles.badge }, "当前") : null,
-            entry.installed ? h("span", { style: styles.badge }, "已安装") : null,
-            entry.deprecated ? h("span", { style: styles.badge }, "已弃用") : null,
-            rowState === "installing"
-              ? h("span", { style: { ...styles.badge, ...styles.badgeBusy } }, "安装中…")
-              : rowState === "failed"
-                ? h("span", { style: { ...styles.badge, ...styles.badgeBad } }, "安装失败")
-                : null,
-            h("span", { style: { flex: 1 } }),
-            // Mutually exclusive per row: not installed → 安装; installed and
-            // not the running one → 启用 + 删除; the running one → nothing.
-            !entry.installed
-              ? h("button", {
-                type: "button",
-                style: styles.buttonPrimary,
-                disabled: disabled || rowState === "installing",
-                onClick: (event) => {
-                  event.stopPropagation();
-                  install(entry);
-                },
-              }, rowState === "installing" ? "安装中…" : "安装")
-              : isActive
-                ? null
-                : [
-                  h("button", {
-                    key: "use",
+              h("span", { style: styles.colVersion }, entry.version),
+              h("span", { style: { ...styles.hint, ...styles.colDate } }, entry.date ? entry.date.slice(0, 10) : "—"),
+              h("span", { style: { ...styles.hint, ...styles.colSrc } }, (entry.sources ?? []).join("+")),
+              h("span", { style: { flex: 1, display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" } },
+                isActive ? h("span", { style: styles.badge }, "当前") : null,
+                entry.installed ? h("span", { style: styles.badge }, "已安装") : null,
+                entry.deprecated ? h("span", { style: styles.badge }, "已弃用") : null,
+                rowState === "installing"
+                  ? h("span", { style: { ...styles.badge, ...styles.badgeBusy } }, "安装中…")
+                  : rowState === "failed"
+                    ? h("span", { style: { ...styles.badge, ...styles.badgeBad } }, "安装失败")
+                    : null,
+              ),
+              // Mutually exclusive per row: not installed → 安装; installed and
+              // not the running one → 启用 + 删除; the running one → nothing.
+              h("span", { style: styles.actions },
+                !entry.installed
+                  ? h("button", {
                     type: "button",
-                    style: styles.buttonTiny,
-                    disabled,
+                    style: styles.buttonPrimary,
+                    disabled: disabled || rowState === "installing",
                     onClick: (event) => {
                       event.stopPropagation();
-                      setSelected(entry.version);
-                      run("activate", async () => {
-                        const value = await callRpc(ctx, "activate", { version: entry.version }, 120000);
-                        return `已启用 ${value.active?.version ?? entry.version}`;
-                      });
+                      install(entry);
                     },
-                  }, "启用"),
-                  h("button", {
-                    key: "del",
-                    type: "button",
-                    style: styles.buttonDanger,
-                    disabled: rowBusy,
-                    onClick: (event) => {
-                      event.stopPropagation();
-                      remove(entry);
-                    },
-                  }, busy === `remove-${entry.version}` ? "删除中…" : "删除"),
-                ],
-          );
-        })),
+                  }, rowState === "installing" ? "安装中…" : "安装")
+                  : isActive
+                    ? null
+                    : [
+                      h("button", {
+                        key: "use",
+                        type: "button",
+                        style: styles.buttonTiny,
+                        disabled,
+                        onClick: (event) => {
+                          event.stopPropagation();
+                          setSelected(entry.version);
+                          run("activate", async () => {
+                            const value = await callRpc(ctx, "activate", { version: entry.version }, 120000);
+                            return `已启用 ${value.active?.version ?? entry.version}`;
+                          });
+                        },
+                      }, "启用"),
+                      h("button", {
+                        key: "del",
+                        type: "button",
+                        style: styles.buttonDanger,
+                        disabled: rowBusy,
+                        onClick: (event) => {
+                          event.stopPropagation();
+                          remove(entry);
+                        },
+                      }, busy === `remove-${entry.version}` ? "删除中…" : "删除"),
+                    ],
+              ),
+            );
+          })),
+        ),
         state.loading ? h("div", { style: styles.hint }, "加载版本列表…") : null,
       );
     }
@@ -549,26 +626,40 @@ window.__ModuleLoader__.load({
             h("button", { type: "button", style: styles.button, disabled, onClick: () => { setDraft(EMPTY_ROW); setAdding(false); } }, "取消"),
           ),
         ) : null,
-        h("div", { style: styles.list }, visible.map((mirror) => {
-          const last = mirror.last;
-          const stateText = last ? (last.ok ? `可用 ${last.ms}ms` : `失败 ${String(last.reason ?? "").slice(0, 48)}`) : "未测试";
-          return h("div", {
-            key: mirror.id,
-            style: { ...styles.item, ...(hovered === mirror.id ? styles.itemHover : {}) },
-            onMouseEnter: () => setHovered(mirror.id),
-            onMouseLeave: () => setHovered((current) => (current === mirror.id ? "" : current)),
-          },
-            h("span", { style: { ...styles.badge, width: "38px", textAlign: "center" } }, mirror.kind),
-            h("span", { style: { width: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: mirror.id }, mirror.id),
-            mirror.origin === "custom"
-              ? h("span", { style: styles.badge }, "自定义")
-              : mirror.origin === "modified" ? h("span", { style: styles.badge }, "已改") : null,
-            h("span", { style: { ...styles.hint, ...styles.mono, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: mirror.url }, mirror.url),
-            h("span", { style: { ...styles.badge, ...(last ? (last.ok ? styles.badgeOk : styles.badgeBad) : {}) } }, stateText),
-            h("button", { type: "button", style: styles.buttonTiny, disabled: disabled || testing === mirror.id, onClick: () => testOne(mirror.id) }, testing === mirror.id ? "测试中…" : "测试"),
-            h("button", { type: "button", style: styles.buttonDanger, disabled, onClick: () => mutate("mirrorRemove", "mirrorRemove", { id: mirror.id }) }, "移除"),
-          );
-        })),
+        h("div", { style: styles.listBox },
+          h("div", { style: styles.listHead },
+            h("span", { style: styles.colKind }, "类型"),
+            h("span", { style: { width: "150px" } }, "站点 id"),
+            h("span", { style: { width: "52px" } }, "来源"),
+            h("span", { style: { flex: 1 } }, "地址"),
+            h("span", { style: { width: "120px" } }, "连通性"),
+            h("span", { style: styles.actions }, "操作"),
+          ),
+          h("div", { style: styles.list }, visible.map((mirror) => {
+            const last = mirror.last;
+            const stateText = last ? (last.ok ? `可用 ${last.ms}ms` : `失败 ${String(last.reason ?? "").slice(0, 48)}`) : "未测试";
+            return h("div", {
+              key: mirror.id,
+              style: { ...styles.item, ...(hovered === mirror.id ? styles.itemHover : {}) },
+              onMouseEnter: () => setHovered(mirror.id),
+              onMouseLeave: () => setHovered((current) => (current === mirror.id ? "" : current)),
+            },
+              h("span", { style: { ...styles.badge, ...styles.colKind } }, mirror.kind),
+              h("span", { style: { width: "150px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: mirror.id }, mirror.id),
+              h("span", { style: { width: "52px" } },
+                mirror.origin === "custom"
+                  ? h("span", { style: styles.badge }, "自定义")
+                  : mirror.origin === "modified" ? h("span", { style: styles.badge }, "已改") : null),
+              h("span", { style: { ...styles.hint, ...styles.mono, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: mirror.url }, mirror.url),
+              h("span", { style: { width: "120px" } },
+                h("span", { style: { ...styles.badge, ...(last ? (last.ok ? styles.badgeOk : styles.badgeBad) : {}) } }, stateText)),
+              h("span", { style: styles.actions },
+                h("button", { type: "button", style: styles.buttonTiny, disabled: disabled || testing === mirror.id, onClick: () => testOne(mirror.id) }, testing === mirror.id ? "测试中…" : "测试"),
+                h("button", { type: "button", style: styles.buttonDanger, disabled, onClick: () => mutate("mirrorRemove", "mirrorRemove", { id: mirror.id }) }, "移除"),
+              ),
+            );
+          })),
+        ),
         visible.length === 0 && !data.loading ? h("div", { style: styles.hint }, "没有匹配的站点") : null,
         data.loading ? h("div", { style: styles.hint }, "加载站点列表…") : null,
         data.removed && data.removed.length > 0
@@ -652,70 +743,75 @@ window.__ModuleLoader__.load({
       };
 
       return h("div", { style: styles.bar },
-        h("span", { style: styles.title }, "REA 服务"),
-        h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } },
-          running ? `运行中 · ${status.tools} 工具` : "已停止"),
-        h("button", { type: "button", style: styles.buttonPrimary, disabled: disabled || running, onClick: () => act("start") },
-          busy === "mcp-start" ? "启动中…" : "启动"),
-        h("button", { type: "button", style: styles.button, disabled: disabled || !running, onClick: () => act("restart") },
-          busy === "mcp-restart" ? "重启中…" : "重启"),
-        h("button", { type: "button", style: styles.buttonDanger, disabled: disabled || !running, onClick: () => act("stop") },
-          busy === "mcp-stop" ? "停止中…" : "停止"),
-        // --- per-parameter editors -------------------------------------------
-        h("span", { style: styles.dividerV }),
-        h("label", { style: styles.field },
-          h("span", { style: styles.hint }, "允许自动启动"),
-          h("input", {
-            type: "checkbox",
-            checked: status?.enabled !== false,
-            disabled,
-            onChange: (event) => patch("允许自动启动", { enabled: event.target.checked }),
-          }),
+        // Row 1: service identity, live state, and the three lifecycle actions.
+        h("div", { style: styles.barTop },
+          h("span", { style: styles.title }, "REA 服务"),
+          h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } },
+            running ? `运行中 · ${status.tools} 工具` : "已停止"),
+          h("span", { style: { flex: 1 } }),
+          h("button", { type: "button", style: styles.buttonPrimary, disabled: disabled || running, onClick: () => act("start") },
+            busy === "mcp-start" ? "启动中…" : "启动"),
+          h("button", { type: "button", style: styles.button, disabled: disabled || !running, onClick: () => act("restart") },
+            busy === "mcp-restart" ? "重启中…" : "重启"),
+          h("button", { type: "button", style: styles.buttonDanger, disabled: disabled || !running, onClick: () => act("stop") },
+            busy === "mcp-stop" ? "停止中…" : "停止"),
         ),
-        h("label", { style: styles.field },
-          h("span", { style: styles.hint }, "崩溃自动重连"),
-          h("input", {
-            type: "checkbox",
-            checked: status?.autoReconnect !== false,
-            disabled,
-            onChange: (event) => patch("崩溃自动重连", { autoReconnect: event.target.checked }),
-          }),
+        // Row 2: one control per parameter, each saved on its own.
+        h("div", { style: styles.barFields },
+          h("label", { style: styles.field },
+            h("span", { style: styles.hint }, "允许自动启动"),
+            h("input", {
+              type: "checkbox",
+              checked: status?.enabled !== false,
+              disabled,
+              onChange: (event) => patch("允许自动启动", { enabled: event.target.checked }),
+            }),
+          ),
+          h("label", { style: styles.field },
+            h("span", { style: styles.hint }, "崩溃自动重连"),
+            h("input", {
+              type: "checkbox",
+              checked: status?.autoReconnect !== false,
+              disabled,
+              onChange: (event) => patch("崩溃自动重连", { autoReconnect: event.target.checked }),
+            }),
+          ),
+          h("label", { style: styles.field },
+            h("span", { style: styles.hint }, "启动超时（秒）"),
+            h("input", {
+              type: "number",
+              min: 5,
+              max: 600,
+              style: styles.inputNarrow,
+              value: draft.startup ?? "",
+              disabled,
+              onChange: (event) => setDraft((current) => ({ ...current, startup: event.target.value })),
+              onBlur: () => commitTimeout("startup"),
+              onKeyDown: (event) => {
+                if (event.key === "Enter") commitTimeout("startup");
+              },
+            }),
+          ),
+          h("label", { style: styles.field },
+            h("span", { style: styles.hint }, "调用超时（秒）"),
+            h("input", {
+              type: "number",
+              min: 5,
+              max: 3600,
+              style: styles.inputNarrow,
+              value: draft.tool ?? "",
+              disabled,
+              onChange: (event) => setDraft((current) => ({ ...current, tool: event.target.value })),
+              onBlur: () => commitTimeout("tool"),
+              onKeyDown: (event) => {
+                if (event.key === "Enter") commitTimeout("tool");
+              },
+            }),
+          ),
+          status && status.autoStart === false
+            ? h("span", { style: { ...styles.hint, fontSize: "11px" } }, "惰性启动已关闭")
+            : null,
         ),
-        h("label", { style: styles.field },
-          h("span", { style: styles.hint }, "启动超时(秒)"),
-          h("input", {
-            type: "number",
-            min: 5,
-            max: 600,
-            style: styles.inputNarrow,
-            value: draft.startup ?? "",
-            disabled,
-            onChange: (event) => setDraft((current) => ({ ...current, startup: event.target.value })),
-            onBlur: () => commitTimeout("startup"),
-            onKeyDown: (event) => {
-              if (event.key === "Enter") commitTimeout("startup");
-            },
-          }),
-        ),
-        h("label", { style: styles.field },
-          h("span", { style: styles.hint }, "调用超时(秒)"),
-          h("input", {
-            type: "number",
-            min: 5,
-            max: 3600,
-            style: styles.inputNarrow,
-            value: draft.tool ?? "",
-            disabled,
-            onChange: (event) => setDraft((current) => ({ ...current, tool: event.target.value })),
-            onBlur: () => commitTimeout("tool"),
-            onKeyDown: (event) => {
-              if (event.key === "Enter") commitTimeout("tool");
-            },
-          }),
-        ),
-        status && status.autoStart === false
-          ? h("span", { style: styles.hint }, "（惰性启动已关闭）")
-          : null,
       );
     }
 
@@ -841,29 +937,41 @@ window.__ModuleLoader__.load({
         h("div", { style: styles.row },
           h("span", { style: styles.hint }, `共 ${state.total} 个工具 · 启用 ${state.enabled} · 禁用 ${state.disabled}${state.version ? ` · REA ${state.version}` : ""}`),
         ),
-        h("div", { style: styles.list }, (state.tools ?? []).map((tool) => h("div", {
-          key: tool.name,
-          style: {
-            ...styles.item,
-            ...(detail?.name === tool.name ? styles.itemSelected : {}),
-            ...(hovered === tool.name ? styles.itemHover : {}),
+        h("div", { style: styles.listBox },
+          h("div", { style: styles.listHead },
+            h("span", { style: { ...styles.colKind, width: "34px" } }, "状态"),
+            h("span", { style: styles.colName }, "工具"),
+            h("span", { style: styles.colGroup }, "分组"),
+            h("span", { style: styles.colParams }, "参数"),
+            h("span", { style: { flex: 1 } }, "说明"),
+            h("span", { style: styles.actions }, "操作"),
+          ),
+          h("div", { style: styles.list }, (state.tools ?? []).map((tool) => h("div", {
+            key: tool.name,
+            style: {
+              ...styles.item,
+              ...(detail?.name === tool.name ? styles.itemSelected : {}),
+              ...(hovered === tool.name ? styles.itemHover : {}),
+            },
+            onMouseEnter: () => setHovered(tool.name),
+            onMouseLeave: () => setHovered((current) => (current === tool.name ? "" : current)),
           },
-          onMouseEnter: () => setHovered(tool.name),
-          onMouseLeave: () => setHovered((current) => (current === tool.name ? "" : current)),
-        },
-          h("span", { style: { ...styles.badge, ...(tool.enabled ? styles.badgeOk : styles.badgeBad), width: "34px", textAlign: "center" } }, tool.enabled ? "开" : "关"),
-          h("span", { style: { width: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.name }, tool.name),
-          h("span", { style: { ...styles.hint, width: "110px" } }, tool.group),
-          h("span", { style: { ...styles.hint, width: "62px" } }, `${tool.propertyCount} 参数`),
-          h("span", { style: { ...styles.hint, ...styles.mono, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.description }, tool.description),
-          h("button", { type: "button", style: styles.buttonTiny, disabled, onClick: () => showSchema(tool) }, "schema"),
-          h("button", {
-            type: "button",
-            style: tool.enabled ? styles.buttonDanger : styles.buttonTiny,
-            disabled,
-            onClick: () => toggle(tool),
-          }, tool.enabled ? "禁用" : "启用"),
-        ))),
+            h("span", { style: { ...styles.badge, ...(tool.enabled ? styles.badgeOk : styles.badgeBad), width: "34px", textAlign: "center" } }, tool.enabled ? "开" : "关"),
+            h("span", { style: styles.colName, title: tool.name }, tool.name),
+            h("span", { style: { ...styles.hint, ...styles.colGroup } }, tool.group),
+            h("span", { style: { ...styles.hint, ...styles.colParams } }, `${tool.propertyCount} 参数`),
+            h("span", { style: { ...styles.hint, ...styles.mono, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.description }, tool.description),
+            h("span", { style: styles.actions },
+              h("button", { type: "button", style: styles.buttonTiny, disabled, onClick: () => showSchema(tool) }, "schema"),
+              h("button", {
+                type: "button",
+                style: tool.enabled ? styles.buttonDanger : styles.buttonTiny,
+                disabled,
+                onClick: () => toggle(tool),
+              }, tool.enabled ? "禁用" : "启用"),
+            ),
+          ))),
+        ),
         state.loading ? h("div", { style: styles.hint }, "加载工具目录…") : null,
         detail ? h("div", { style: styles.card },
           h("div", { style: styles.row },
@@ -908,18 +1016,22 @@ window.__ModuleLoader__.load({
       ];
 
       return h("div", { style: styles.root },
-        h("div", { style: styles.title }, "REA 逆向分析管理器"),
-        // Service control sits directly under the title, above the tabs: it is
-        // global to the plugin, not part of any single tab.
+        // Header: what this panel is, and where its files live.
+        h("div", { style: styles.header },
+          h("span", { style: styles.title }, "REA 逆向分析管理器"),
+          h("span", { style: styles.subtitle }, "版本安装与回退 · MCP 工具目录 · 代理站点"),
+        ),
+        // Service control is global to the plugin, so it sits above the tabs.
         h(McpBar, { ctx, busy, setBusy, setError, setMessage, status: mcp, onStatus: setMcp }),
-        h("div", { style: styles.row },
+        h("div", { style: styles.tabStrip },
           tabs.map(([id, label]) => h("button", {
             key: id,
             type: "button",
             style: { ...styles.tab, ...(tab === id ? styles.tabActive : {}) },
             onClick: () => setTab(id),
           }, label)),
-          busy ? h("span", { style: styles.hint }, "处理中…") : null,
+          h("span", { style: { flex: 1 } }),
+          busy ? h("span", { style: { ...styles.hint, fontSize: "11px" } }, "处理中…") : null,
         ),
         tab === "versions"
           ? h(VersionPanel, { ctx, busy, setBusy, setError, setMessage })
