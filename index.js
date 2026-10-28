@@ -18,6 +18,8 @@ import { installVersion, activateRuntime, listInstalled, inspectRuntime } from '
 import { ensureNodeRuntime } from './lib/node-runtime.js';
 import { closeSession, getSession, sessionState } from './lib/mcp-client.js';
 import { probeMirrors } from './lib/health.js';
+import { mcpStatus, restartMcp, startMcp, stopMcp } from './lib/mcp-control.js';
+import { listTools, resetTools, setToolEnabled, setToolsEnabled, toolSchema } from './lib/tool-admin.js';
 import {
   createMirror,
   deleteMirror,
@@ -219,6 +221,42 @@ async function handleRpc(request, ctx) {
         return success(body.rpcId, restoreMirrors());
       case 'mirrorReorder':
         return success(body.rpcId, reorderMirrors(Array.isArray(wrapped.payload?.ids) ? wrapped.payload.ids : []));
+      /* ------------------------- MCP process control ----------------------- */
+      case 'mcpStatus':
+        return success(body.rpcId, mcpStatus());
+      case 'mcpStart':
+        return success(body.rpcId, await startMcp());
+      case 'mcpStop':
+        return success(body.rpcId, await stopMcp());
+      case 'mcpRestart':
+        return success(body.rpcId, await restartMcp());
+      /* ------------------------- MCP tool catalog -------------------------- */
+      case 'toolList': {
+        const payload = wrapped.payload ?? {};
+        return success(body.rpcId, await listTools({
+          query: typeof payload.query === 'string' ? payload.query : undefined,
+          group: typeof payload.group === 'string' ? payload.group : undefined,
+          enabled: typeof payload.enabled === 'boolean' ? payload.enabled : undefined,
+          limit: Number.isInteger(payload.limit) ? payload.limit : undefined,
+          offset: Number.isInteger(payload.offset) ? payload.offset : undefined,
+        }));
+      }
+      case 'toolSet': {
+        const payload = wrapped.payload ?? {};
+        return success(body.rpcId, await setToolEnabled(payload.tool, payload.enabled === true));
+      }
+      case 'toolBulk': {
+        const payload = wrapped.payload ?? {};
+        return success(body.rpcId, await setToolsEnabled({
+          query: typeof payload.query === 'string' ? payload.query : undefined,
+          group: typeof payload.group === 'string' ? payload.group : undefined,
+          enabled: payload.enabled !== false,
+        }));
+      }
+      case 'toolReset':
+        return success(body.rpcId, resetTools());
+      case 'toolSchema':
+        return success(body.rpcId, await toolSchema(wrapped.payload?.tool));
       case 'config':
         return success(body.rpcId, loadConfig());
       default:

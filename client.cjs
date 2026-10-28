@@ -472,6 +472,178 @@ window.__ModuleLoader__.load({
       });
     }
 
+    /* ------------------------------------------------------------ mcp tools */
+
+    function ToolPanel({ ctx, setBusy, setError, setMessage, busy }) {
+      const [state, setState] = React.useState({ loading: true, tools: [], total: 0, enabled: 0, disabled: 0, groups: [] });
+      const [mcp, setMcp] = React.useState(null);
+      const [query, setQuery] = React.useState("");
+      const [group, setGroup] = React.useState("");
+      const [onlyDisabled, setOnlyDisabled] = React.useState(false);
+      const [detail, setDetail] = React.useState(null);
+
+      const applyList = React.useCallback((value) => {
+        if (!value || !Array.isArray(value.tools)) return;
+        setState({
+          loading: false,
+          tools: value.tools,
+          total: value.total ?? 0,
+          enabled: value.enabled ?? 0,
+          disabled: value.disabled ?? 0,
+          groups: value.groups ?? [],
+          version: value.version ?? "",
+        });
+      }, []);
+
+      const load = React.useCallback(async () => {
+        setBusy("toolLoad");
+        setError("");
+        try {
+          const [status, list] = await Promise.all([
+            callRpc(ctx, "mcpStatus", {}, 60000),
+            callRpc(ctx, "toolList", {
+              query: query.trim() || undefined,
+              group: group || undefined,
+              enabled: onlyDisabled ? false : undefined,
+              limit: 400,
+            }, 120000),
+          ]);
+          setMcp(status);
+          applyList(list);
+        } catch (cause) {
+          setError(String(cause?.message ?? cause));
+          setState((previous) => ({ ...previous, loading: false }));
+        } finally {
+          setBusy("");
+        }
+      }, [ctx, query, group, onlyDisabled, applyList, setBusy, setError]);
+
+      React.useEffect(() => {
+        load();
+      }, [load]);
+
+      const run = React.useCallback(async (label, action) => {
+        setBusy(label);
+        setError("");
+        setMessage("");
+        try {
+          const value = await action();
+          setMessage(typeof value === "string" ? value : "已保存");
+          await load();
+          return value;
+        } catch (cause) {
+          setError(String(cause?.message ?? cause));
+        } finally {
+          setBusy("");
+        }
+      }, [load, setBusy, setError, setMessage]);
+
+      const mcpAction = (action) => run(`mcp-${action}`, async () => {
+        const status = await callRpc(ctx, action === "start" ? "mcpStart" : action === "stop" ? "mcpStop" : "mcpRestart", {}, 300000);
+        setMcp(status);
+        return `${action === "start" ? "已启动" : action === "stop" ? "已停止" : "已重启"}：${status.running ? `运行中，${status.tools} 个工具` : "已停止"}`;
+      });
+
+      const toggle = (tool) => run(`tool-${tool.name}`, async () => {
+        await callRpc(ctx, "toolSet", { tool: tool.name, enabled: !tool.enabled }, 120000);
+        return `${tool.enabled ? "已禁用" : "已启用"} ${tool.name}`;
+      });
+
+      const bulk = (enabled) => run("toolBulk", async () => {
+        if (!query.trim() && !group) throw new Error("批量操作需要先填搜索词或选择分组");
+        const value = await callRpc(ctx, "toolBulk", {
+          query: query.trim() || undefined,
+          group: group || undefined,
+          enabled,
+        }, 300000);
+        return `已${enabled ? "启用" : "禁用"} ${value.changed} 个工具`;
+      });
+
+      const reset = () => run("toolReset", async () => {
+        await callRpc(ctx, "toolReset", {}, 60000);
+        return "已全部启用";
+      });
+
+      const showSchema = async (tool) => {
+        setBusy(`schema-${tool.name}`);
+        setError("");
+        try {
+          setDetail(await callRpc(ctx, "toolSchema", { tool: tool.name }, 120000));
+        } catch (cause) {
+          setError(String(cause?.message ?? cause));
+        } finally {
+          setBusy("");
+        }
+      };
+
+      const disabled = busy !== "";
+      const running = mcp?.running === true;
+
+      return h("div", { style: styles.root },
+        h("div", { style: styles.row },
+          h("span", { style: styles.hint }, "MCP 服务"),
+          h("span", { style: { ...styles.badge, ...(running ? styles.badgeOk : styles.badgeBad) } }, running ? `运行中 · ${mcp.tools} 工具` : "已停止"),
+          h("button", { type: "button", style: styles.buttonPrimary, disabled, onClick: () => mcpAction("start") }, busy === "mcp-start" ? "启动中…" : "启动"),
+          h("button", { type: "button", style: styles.button, disabled, onClick: () => mcpAction("restart") }, busy === "mcp-restart" ? "重启中…" : "重启"),
+          h("button", { type: "button", style: styles.buttonDanger, disabled, onClick: () => mcpAction("stop") }, busy === "mcp-stop" ? "停止中…" : "停止"),
+          mcp ? h("span", { style: styles.hint }, `超时 ${mcp.startupTimeoutMs}/${mcp.toolTimeoutMs}ms · 自动重连 ${mcp.autoReconnect ? "开" : "关"}`) : null,
+        ),
+        h("div", { style: styles.row },
+          h("input", {
+            style: { ...styles.input, width: "200px" },
+            placeholder: "搜索工具名 / 描述",
+            value: query,
+            onChange: (event) => setQuery(event.target.value),
+          }),
+          h("select", {
+            style: { ...styles.input, width: "150px" },
+            value: group,
+            onChange: (event) => setGroup(event.target.value),
+          },
+            h("option", { value: "" }, "全部分组"),
+            (state.groups ?? []).map((name) => h("option", { key: name, value: name }, name)),
+          ),
+          h("label", { style: { ...styles.hint, display: "flex", alignItems: "center", gap: "4px" } },
+            h("input", { type: "checkbox", checked: onlyDisabled, onChange: (event) => setOnlyDisabled(event.target.checked) }),
+            "只看已禁用",
+          ),
+          h("button", { type: "button", style: styles.button, disabled, onClick: () => bulk(true) }, "按条件启用"),
+          h("button", { type: "button", style: styles.button, disabled, onClick: () => bulk(false) }, "按条件禁用"),
+          h("button", { type: "button", style: styles.button, disabled, onClick: reset }, "全部启用"),
+        ),
+        h("div", { style: styles.row },
+          h("span", { style: styles.hint }, `共 ${state.total} 个工具 · 启用 ${state.enabled} · 禁用 ${state.disabled}${state.version ? ` · REA ${state.version}` : ""}`),
+        ),
+        h("div", { style: styles.list }, (state.tools ?? []).map((tool) => h("div", {
+          key: tool.name,
+          style: styles.item,
+        },
+          h("span", { style: { ...styles.badge, ...(tool.enabled ? styles.badgeOk : styles.badgeBad), width: "34px", textAlign: "center" } }, tool.enabled ? "开" : "关"),
+          h("span", { style: { width: "220px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.name }, tool.name),
+          h("span", { style: { ...styles.hint, width: "110px" } }, tool.group),
+          h("span", { style: { ...styles.hint, width: "62px" } }, `${tool.propertyCount} 参数`),
+          h("span", { style: { ...styles.hint, ...styles.mono, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }, title: tool.description }, tool.description),
+          h("button", { type: "button", style: styles.buttonTiny, disabled, onClick: () => showSchema(tool) }, "schema"),
+          h("button", {
+            type: "button",
+            style: tool.enabled ? styles.buttonDanger : styles.buttonTiny,
+            disabled,
+            onClick: () => toggle(tool),
+          }, tool.enabled ? "禁用" : "启用"),
+        ))),
+        state.loading ? h("div", { style: styles.hint }, "加载工具目录…") : null,
+        detail ? h("div", { style: styles.card },
+          h("div", { style: styles.row },
+            h("strong", null, detail.name),
+            h("span", { style: styles.badge }, detail.group),
+            h("button", { type: "button", style: styles.buttonTiny, onClick: () => setDetail(null) }, "关闭"),
+          ),
+          h("div", { style: { ...styles.hint, fontSize: "11px" } }, String(detail.description ?? "").split("\n")[0]),
+          h("div", { style: styles.log }, JSON.stringify(detail.inputSchema ?? {}, null, 2)),
+        ) : null,
+      );
+    }
+
     /* ---------------------------------------------------------------- shell */
 
     function Panel({ ctx }) {
@@ -480,24 +652,28 @@ window.__ModuleLoader__.load({
       const [message, setMessage] = React.useState("");
       const [error, setError] = React.useState("");
 
+      const tabs = [
+        ["versions", "版本管理"],
+        ["tools", "MCP 工具"],
+        ["mirrors", "代理站点"],
+      ];
+
       return h("div", { style: styles.root },
         h("div", { style: styles.title }, "REA 逆向分析管理器"),
         h("div", { style: styles.row },
-          h("button", {
+          tabs.map(([id, label]) => h("button", {
+            key: id,
             type: "button",
-            style: { ...styles.tab, ...(tab === "versions" ? styles.tabActive : {}) },
-            onClick: () => setTab("versions"),
-          }, "版本管理"),
-          h("button", {
-            type: "button",
-            style: { ...styles.tab, ...(tab === "mirrors" ? styles.tabActive : {}) },
-            onClick: () => setTab("mirrors"),
-          }, "代理站点"),
+            style: { ...styles.tab, ...(tab === id ? styles.tabActive : {}) },
+            onClick: () => setTab(id),
+          }, label)),
           busy ? h("span", { style: styles.hint }, "处理中…") : null,
         ),
         tab === "versions"
           ? h(VersionPanel, { ctx, busy, setBusy, setError, setMessage })
-          : h(MirrorPanel, { ctx, busy, setBusy, setError, setMessage }),
+          : tab === "tools"
+            ? h(ToolPanel, { ctx, busy, setBusy, setError, setMessage })
+            : h(MirrorPanel, { ctx, busy, setBusy, setError, setMessage }),
         error ? h("div", { style: styles.error }, error) : null,
         message ? h("div", { style: styles.log }, message) : null,
       );
